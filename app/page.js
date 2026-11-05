@@ -3,6 +3,7 @@ import { progress } from '@/lib/goals';
 import { eur, pct, fmtDate, greeting, longToday, monthStart, shiftMonth, monthLabel, todayIso, weekStart, addDays, isoWeek } from '@/lib/util';
 import ProgressBar from './goals/ProgressBar';
 import SyncButton from './components/SyncButton';
+import SourceIcon from './components/SourceIcon';
 import { queueItem, setFocus } from './home-actions';
 
 export const dynamic = 'force-dynamic';
@@ -87,7 +88,7 @@ export default async function Home({ searchParams }) {
           <div className="action-list">
             {focus.map((f) => (
               <div key={f.id} className="action-item">
-                <span className="tag">{f.source}</span>
+                <SourceIcon source={f.source} />
                 <a className="body" href={f.link || '#'} target={f.link ? '_blank' : undefined} rel="noopener noreferrer" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
                   <strong>{f.title}</strong>{f.priority === 'high' ? <span className="neg" style={{ fontSize: 12 }}> · high</span> : null}<br /><span className="muted">{f.reason}</span>
                 </a>
@@ -97,28 +98,28 @@ export default async function Home({ searchParams }) {
             ))}
             {!wk || wk.status !== 'submitted' ? (
               <a href="/reflections" className="action-item">
-                <span className="tag">Reflection</span>
+                <SourceIcon source="Reflection" />
                 <span className="body"><strong>Weekly reflection {wk ? 'still a draft' : 'not started'}</strong><br /><span className="muted">Week {isoWeek(lastWeek)} is ready to review</span></span>
                 <span className="go">Start →</span>
               </a>
             ) : null}
             {!latest || latest < month ? (
               <a href="/finance" className="action-item">
-                <span className="tag">Finance</span>
+                <SourceIcon source="Finance" />
                 <span className="body"><strong>Monthly finance update for {monthLabel(month)}</strong><br /><span className="muted">Net worth not entered yet this month</span></span>
                 <span className="go">Update →</span>
               </a>
             ) : null}
             {!lastHealth || lastHealth < addDays(today, -7) ? (
               <a href="/health" className="action-item">
-                <span className="tag">Health</span>
+                <SourceIcon source="Health" />
                 <span className="body"><strong>Weekly health check-in</strong><br /><span className="muted">{lastHealth ? `Last weigh-in ${fmtDate(lastHealth)}` : 'No weight or body fat logged yet'}</span></span>
                 <span className="go">Log →</span>
               </a>
             ) : null}
             {active.filter((g) => g.deadline && g.deadline < today).map((g) => (
               <a key={g.id} href={`/goals/${g.id}`} className="action-item">
-                <span className="tag">Goal</span>
+                <SourceIcon source="Goal" />
                 <span className="body"><strong>{g.name}</strong><br /><span className="neg">Deadline passed {fmtDate(g.deadline)}</span></span>
                 <span className="go">Review →</span>
               </a>
