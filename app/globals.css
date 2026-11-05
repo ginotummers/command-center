@@ -9,19 +9,6 @@
   --gold-fill: linear-gradient(90deg, #6E5229 0%, #A07D45 55%, #B28D51 100%);
   color-scheme: dark;
 }
-@media (prefers-color-scheme: light) {
-  :root {
-    --ground: #F4F6F9; --ground-glow: #F7F8FB; --surface: #FFFFFF; --surface-high: #FAF8F4;
-    --surface-sunken: #E1E4EA; --line: #D5DAE3; --ink: #01061B; --ink-muted: #475467;
-    --gold: #5E3F2A; --gold-light: #8A6239; --gold-dark: #5E3D26; --on-gold: #FFFFFF;
-    --positive: #1F6B44; --negative: #A8532A;
-    --page-bg: linear-gradient(180deg, #F7F8FB 0%, #E9EDF3 100%);
-    --card-bg: linear-gradient(160deg, #FFFFFF 0%, #FAF8F4 100%);
-    --gold-grad: linear-gradient(135deg, #8A6239 0%, #6F4A2C 55%, #5E3D26 100%);
-    --gold-fill: linear-gradient(90deg, #5E3D26 0%, #8A6239 55%, #A97E4C 100%);
-    color-scheme: light;
-  }
-}
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { min-height: 100vh; background: var(--page-bg); background-attachment: fixed; color: var(--ink); font-family: var(--font-body), Inter, system-ui, sans-serif; font-size: 14px; line-height: 1.45; }
