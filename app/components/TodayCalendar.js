@@ -14,8 +14,13 @@ function dubaiMinutesNow() {
 const fmt = (min) => `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 
 // Side-by-side columns for overlapping items, like a calendar app
+// Short items get a visual minimum of 30 minutes, and that visual length is what
+// decides overlaps, so a 5-minute item never hides under its neighbour.
+const MIN_VISUAL = 30;
 function layout(items) {
-  const sorted = [...items].sort((a, b) => a.start - b.start || b.end - a.end);
+  const sorted = [...items]
+    .map((i) => ({ ...i, vEnd: Math.max(i.end, i.start + MIN_VISUAL) }))
+    .sort((a, b) => a.start - b.start || b.vEnd - a.vEnd);
   const out = [];
   let cluster = [];
   let clusterEnd = -1;
@@ -23,7 +28,7 @@ function layout(items) {
     const cols = [];
     cluster.forEach((it) => {
       let c = cols.findIndex((end) => end <= it.start);
-      if (c === -1) { c = cols.length; cols.push(it.end); } else cols[c] = it.end;
+      if (c === -1) { c = cols.length; cols.push(it.vEnd); } else cols[c] = it.vEnd;
       it.col = c;
     });
     cluster.forEach((it) => out.push({ ...it, cols: cols.length }));
@@ -32,7 +37,7 @@ function layout(items) {
   sorted.forEach((it) => {
     if (cluster.length && it.start >= clusterEnd) { flush(); clusterEnd = -1; }
     cluster.push(it);
-    clusterEnd = Math.max(clusterEnd, it.end);
+    clusterEnd = Math.max(clusterEnd, it.vEnd);
   });
   if (cluster.length) flush();
   return out;
@@ -84,9 +89,9 @@ export default function TodayCalendar({ items }) {
 
         {placed.map((it) => {
           const top = (it.start / 60 - startH) * HOUR;
-          const h = Math.max(22, ((it.end - it.start) / 60) * HOUR - 2);
+          const h = ((it.vEnd - it.start) / 60) * HOUR - 2;
           const widthPct = 100 / it.cols;
-          const short = h < 40;
+          const short = h < 40 || it.cols > 2;
           const Tag = it.link ? 'a' : 'div';
           return (
             <Tag key={it.key} href={it.link || undefined} target={it.link ? '_blank' : undefined} rel={it.link ? 'noopener noreferrer' : undefined}
