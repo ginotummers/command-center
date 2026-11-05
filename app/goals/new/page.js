@@ -1,7 +1,7 @@
 import GoalFields from '../GoalFields';
 import { createGoal } from '../actions';
 
-export const metadata = { title: 'Create goal · Command Center' };
+export const metadata = { title: 'Create goal · Personal Operating Center' };
 
 export default function NewGoal() {
   return (

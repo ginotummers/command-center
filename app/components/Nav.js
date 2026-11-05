@@ -4,7 +4,8 @@ import { usePathname } from 'next/navigation';
 const ITEMS = [
   ['/', 'Home'],
   ['/goals', 'Goals'],
-  ['/money', 'Money'],
+  ['/finance', 'Finance'],
+  ['/health', 'Health'],
   ['/reflections', 'Reflections'],
 ];
 

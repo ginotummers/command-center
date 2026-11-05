@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase';
 import { eur, pct, monthStart, shiftMonth, monthLabel } from '@/lib/util';
 import { addIncome, addExpense, addNetWorth, removeRow, copyFromPrevious } from './actions';
 
-export const metadata = { title: 'Money · Command Center' };
+export const metadata = { title: 'Finance · Personal Operating Center' };
 const NW_TYPES = [['gold', 'Gold'], ['sp500', 'S&P 500'], ['bank', 'Bank'], ['other', 'Other asset'], ['liability', 'Liability']];
 
 const sum = (rows, key) => (rows || []).reduce((a, r) => a + Number(r[key] || 0), 0);
@@ -60,12 +60,12 @@ export default async function Money({ searchParams }) {
     <>
       <div className="section-title">
         <div>
-          <p className="overline">Money · EUR</p>
+          <p className="overline">Finance · EUR</p>
           <h1>{monthLabel(month)}</h1>
         </div>
         <div className="nav">
-          <a className="pill" href={`/money?m=${prev.slice(0, 7)}`}>← {monthLabel(prev).split(' ')[0]}</a>
-          <a className="pill" href={`/money?m=${shiftMonth(month, 1).slice(0, 7)}`}>{monthLabel(shiftMonth(month, 1)).split(' ')[0]} →</a>
+          <a className="pill" href={`/finance?m=${prev.slice(0, 7)}`}>← {monthLabel(prev).split(' ')[0]}</a>
+          <a className="pill" href={`/finance?m=${shiftMonth(month, 1).slice(0, 7)}`}>{monthLabel(shiftMonth(month, 1)).split(' ')[0]} →</a>
         </div>
       </div>
 

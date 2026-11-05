@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase';
-import { fmtDate, periodTitle } from '@/lib/util';
+import { fmtDate, periodTitle, todayIso, todayParts, isoWeek, addDays, weekStart, monthLabel, monthStart, shiftMonth } from '@/lib/util';
 import { newReflection } from './actions';
 
-export const metadata = { title: 'Reflections · Command Center' };
+export const metadata = { title: 'Reflections · Personal Operating Center' };
 
 export default async function Reflections({ searchParams }) {
   const sp = await searchParams;
@@ -11,6 +11,11 @@ export default async function Reflections({ searchParams }) {
   const { data } = await supabase.from('reflections').select('id,type,period_start,period_end,week_number,month,year,status,completed_at,answers').eq('type', type).order('period_start', { ascending: false });
   const rows = data || [];
   const submitted = rows.filter((r) => r.status === 'submitted');
+  const today = todayIso();
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay() || 7;
+  const weekNo = isoWeek(dow <= 3 ? addDays(weekStart(today), -7) : weekStart(today));
+  const { d } = todayParts();
+  const monthName = monthLabel(d <= 10 ? shiftMonth(monthStart(), -1) : monthStart());
 
   return (
     <>
@@ -20,12 +25,30 @@ export default async function Reflections({ searchParams }) {
           <h1>Reflections</h1>
           <p className="muted" style={{ margin: '6px 0 0' }}>Review → Identify → Decide → Act → Compare</p>
         </div>
-        <div className="nav">
-          <form action={newReflection}><input type="hidden" name="type" value="weekly" /><button className="btn" type="submit">Weekly reflection</button></form>
-          <form action={newReflection}><input type="hidden" name="type" value="monthly" /><button className="btn ghost" type="submit">Monthly reflection</button></form>
-        </div>
       </div>
       {sp?.saved && <p className="hint" style={{ margin: 0 }}>Reflection submitted and saved.</p>}
+
+      <div className="entry-cards">
+        <form action={newReflection} style={{ flex: '1 1 320px', display: 'flex' }}>
+          <input type="hidden" name="type" value="weekly" />
+          <button className="entry-card" type="submit">
+            <span className="overline">Weekly · about 20 minutes</span>
+            <h2>Fill in your weekly reflection</h2>
+            <span className="muted">Performance review and operator review for Week {weekNo}: time, work, showing up and next week's actions.</span>
+            <span className="go">Open the questionnaire →</span>
+          </button>
+        </form>
+        <form action={newReflection} style={{ flex: '1 1 320px', display: 'flex' }}>
+          <input type="hidden" name="type" value="monthly" />
+          <button className="entry-card" type="submit">
+            <span className="overline">Monthly · about 40 minutes</span>
+            <h2>Fill in your monthly reflection</h2>
+            <span className="muted">The bigger picture for {monthName}: achievements, patterns, direction and next month's priorities.</span>
+            <span className="go">Open the questionnaire →</span>
+          </button>
+        </form>
+      </div>
+      <p className="muted" style={{ margin: 0, fontSize: 13 }}>Your answers save as a draft whenever you like, so you can finish later. Opening one that already exists continues where you left off.</p>
 
       <div className="tabs">
         <a href="/reflections?type=weekly" className={`pill${type === 'weekly' ? ' active' : ''}`}>Weekly history</a>

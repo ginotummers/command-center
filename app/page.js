@@ -19,6 +19,8 @@ export default async function Home() {
     supabase.from('expenses').select('amount').eq('month', month),
     supabase.from('reflections').select('id,type,status,period_start').gte('period_start', lastWeek).eq('type', 'weekly'),
   ]);
+  const { data: bm } = await supabase.from('body_metrics').select('date').order('date', { ascending: false }).limit(1);
+  const lastHealth = bm?.[0]?.date || null;
   const active = (goalsData || []).filter((g) => !DONE.includes(g.status));
 
   const byMonth = {};
@@ -41,42 +43,52 @@ export default async function Home() {
 
       <div className="row">
         <section className="card wide">
-          <div className="card-head"><h2>Needs your attention</h2><span className="tag">Phase 2</span></div>
-          <p className="muted" style={{ margin: 0 }}>Focus points from Gmail, Zoom, Wispr Flow and Akiflow appear here once the background agent is connected.</p>
-          <div className="list" style={{ marginTop: 12 }}>
+          <div className="card-head"><h2>Needs your attention</h2></div>
+          <div className="action-list">
             {!wk || wk.status !== 'submitted' ? (
-              <a href="/reflections" style={{ display: 'flex', gap: 12, alignItems: 'center', color: 'var(--ink)', textDecoration: 'none' }}>
+              <a href="/reflections" className="action-item">
                 <span className="tag">Reflection</span>
-                <span><strong>Weekly reflection {wk ? 'still a draft' : 'not started'}</strong><br /><span className="muted">Week {isoWeek(lastWeek)} is ready to review</span></span>
+                <span className="body"><strong>Weekly reflection {wk ? 'still a draft' : 'not started'}</strong><br /><span className="muted">Week {isoWeek(lastWeek)} is ready to review</span></span>
+                <span className="go">Start →</span>
               </a>
             ) : null}
             {!latest || latest < month ? (
-              <a href="/money" style={{ display: 'flex', gap: 12, alignItems: 'center', color: 'var(--ink)', textDecoration: 'none' }}>
-                <span className="tag">Money</span>
-                <span><strong>Monthly money update for {monthLabel(month)}</strong><br /><span className="muted">Net worth not entered yet this month</span></span>
+              <a href="/finance" className="action-item">
+                <span className="tag">Finance</span>
+                <span className="body"><strong>Monthly finance update for {monthLabel(month)}</strong><br /><span className="muted">Net worth not entered yet this month</span></span>
+                <span className="go">Update →</span>
+              </a>
+            ) : null}
+            {!lastHealth || lastHealth < addDays(today, -7) ? (
+              <a href="/health" className="action-item">
+                <span className="tag">Health</span>
+                <span className="body"><strong>Weekly health check-in</strong><br /><span className="muted">{lastHealth ? `Last weigh-in ${fmtDate(lastHealth)}` : 'No weight or body fat logged yet'}</span></span>
+                <span className="go">Log →</span>
               </a>
             ) : null}
             {active.filter((g) => g.deadline && g.deadline < today).map((g) => (
-              <a key={g.id} href={`/goals/${g.id}`} style={{ display: 'flex', gap: 12, alignItems: 'center', color: 'var(--ink)', textDecoration: 'none' }}>
+              <a key={g.id} href={`/goals/${g.id}`} className="action-item">
                 <span className="tag">Goal</span>
-                <span><strong>{g.name}</strong><br /><span className="neg">Deadline passed {fmtDate(g.deadline)}</span></span>
+                <span className="body"><strong>{g.name}</strong><br /><span className="neg">Deadline passed {fmtDate(g.deadline)}</span></span>
+                <span className="go">Review →</span>
               </a>
             ))}
           </div>
+          <p className="muted" style={{ margin: '14px 0 0', fontSize: 13 }}>Focus points from Gmail, Zoom, Wispr Flow and Akiflow join this list once those are connected.</p>
         </section>
         <section className="card narrow">
-          <div className="card-head"><h2>Today</h2><span className="tag">Next</span></div>
-          <p className="muted" style={{ margin: 0 }}>Your meetings and time blocks from Google Calendar show here once Google sign-in is connected.</p>
+          <div className="card-head"><h2>Today</h2></div>
+          <p className="muted" style={{ margin: 0 }}>Your Google Calendar meetings and Akiflow tasks will show here together, like in Akiflow, once they are connected.</p>
         </section>
       </div>
 
       <div className="row">
-        <a href="/money" className="card tile" style={{ textDecoration: 'none', color: 'var(--ink)' }}>
+        <a href="/finance" className="card tile" style={{ textDecoration: 'none', color: 'var(--ink)' }}>
           <p className="muted" style={{ margin: 0 }}>Net worth</p>
           <p className="stat">{eur(nw)}</p>
           {nwChange === null ? <span className="muted">{latest ? monthLabel(latest) : 'Not entered yet'}</span> : <span className={nwChange >= 0 ? 'pos' : 'neg'}>{nwChange >= 0 ? '▲' : '▼'} {pct(Math.abs(nwChange))} vs last month</span>}
         </a>
-        <a href="/money" className="card tile" style={{ textDecoration: 'none', color: 'var(--ink)' }}>
+        <a href="/finance" className="card tile" style={{ textDecoration: 'none', color: 'var(--ink)' }}>
           <p className="muted" style={{ margin: 0 }}>Saved this month</p>
           <p className="stat">{income || expenses ? eur(income - expenses) : '—'}</p>
           <span className="muted">{income ? `Savings rate ${pct(((income - expenses) / income) * 100, 0)}` : 'Add income to see your rate'}</span>

@@ -3,7 +3,7 @@ import { progress, STATUSES, isNumeric } from '@/lib/goals';
 import { fmtDate } from '@/lib/util';
 import ProgressBar from './ProgressBar';
 
-export const metadata = { title: 'Goals · Command Center' };
+export const metadata = { title: 'Goals · Personal Operating Center' };
 const VIEWS = [['direction', 'Direction'], ['active', 'Active goals'], ['achieved', 'Achieved'], ['archive', 'Archive']];
 const DONE = ['Achieved', 'Not Achieved', 'Abandoned'];
 

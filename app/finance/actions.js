@@ -8,7 +8,7 @@ const TABLES = ['income', 'expenses', 'net_worth_items'];
 
 function back(fd) {
   const m = String(fd.get('month') || '');
-  return `/money?m=${m.slice(0, 7)}`;
+  return `/finance?m=${m.slice(0, 7)}`;
 }
 
 function safeLink(v) {
@@ -29,7 +29,7 @@ export async function addIncome(fd) {
     });
     if (error) throw new Error(error.message);
   }
-  revalidatePath('/money'); revalidatePath('/');
+  revalidatePath('/finance'); revalidatePath('/');
   redirect(back(fd));
 }
 
@@ -43,7 +43,7 @@ export async function addExpense(fd) {
     });
     if (error) throw new Error(error.message);
   }
-  revalidatePath('/money'); revalidatePath('/');
+  revalidatePath('/finance'); revalidatePath('/');
   redirect(back(fd));
 }
 
@@ -58,7 +58,7 @@ export async function addNetWorth(fd) {
     });
     if (error) throw new Error(error.message);
   }
-  revalidatePath('/money'); revalidatePath('/');
+  revalidatePath('/finance'); revalidatePath('/');
   redirect(back(fd));
 }
 
@@ -68,7 +68,7 @@ export async function removeRow(fd) {
   const supabase = await createClient();
   const { error } = await supabase.from(table).delete().eq('id', String(fd.get('id')));
   if (error) throw new Error(error.message);
-  revalidatePath('/money'); revalidatePath('/');
+  revalidatePath('/finance'); revalidatePath('/');
   redirect(back(fd));
 }
 
@@ -85,6 +85,6 @@ export async function copyFromPrevious(fd) {
   if (inc?.length) await supabase.from('income').insert(inc.map((r) => ({ ...r, month })));
   if (exp?.length) await supabase.from('expenses').insert(exp.map((r) => ({ ...r, month })));
   if (nw?.length) await supabase.from('net_worth_items').insert(nw.map((r) => ({ ...r, month })));
-  revalidatePath('/money'); revalidatePath('/');
+  revalidatePath('/finance'); revalidatePath('/');
   redirect(back(fd));
 }

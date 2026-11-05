@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase';
 import { sectionsFor } from '@/lib/questions';
 import { periodTitle, pct } from '@/lib/util';
 
-export const metadata = { title: 'Compare reflections · Command Center' };
+export const metadata = { title: 'Compare reflections · Personal Operating Center' };
 
 async function load(supabase, id) {
   const [{ data: r }, { data: m }, { data: a }] = await Promise.all([
