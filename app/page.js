@@ -41,12 +41,14 @@ export default async function Home({ searchParams }) {
   const focus = (focusData || []).sort((a, b) => (PRIO[a.priority] ?? 1) - (PRIO[b.priority] ?? 1));
   const events = (evData || []).filter((e) => !e.all_day);
   const allDay = (evData || []).filter((e) => e.all_day);
-  const tasksToday = (taskData || []).filter((t) => t.planned_date === today && !t.is_overdue);
-  const overdue = (taskData || []).filter((t) => t.is_overdue && t.status !== 'done');
+  // Today's tasks stay on today's calendar even after Akiflow marks them overdue;
+  // the overdue line below only lists tasks from earlier days.
+  const tasksToday = (taskData || []).filter((t) => t.planned_date === today);
+  const overdue = (taskData || []).filter((t) => t.is_overdue && t.status !== 'done' && t.planned_date !== today);
   const dmin = (iso) => { const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(iso)); return (Number(p.find((x) => x.type === 'hour').value) % 24) * 60 + Number(p.find((x) => x.type === 'minute').value); };
   const calItems = [
     ...events.map((e) => { const s = dmin(e.start_at); const en = e.end_at ? dmin(e.end_at) : s + 30; return { key: `e${e.id}`, start: s, end: en > s ? en : 24 * 60, title: e.title, kind: e.is_meeting ? 'meeting' : 'block', link: e.link || null }; }),
-    ...tasksToday.filter((t) => t.start_at).map((t) => { const s = dmin(t.start_at); return { key: `t${t.id}`, start: s, end: Math.min(24 * 60, s + (t.duration_min || 30)), title: t.title, kind: 'task', done: t.status === 'done', link: t.link || null }; }),
+    ...tasksToday.filter((t) => t.start_at).map((t) => { const s = dmin(t.start_at); return { key: `t${t.id}`, start: s, end: Math.min(24 * 60, s + (t.duration_min || 30)), title: t.title, kind: 'task', done: t.status === 'done', late: t.is_overdue && t.status !== 'done', link: t.link || null }; }),
   ];
   const unscheduled = tasksToday.filter((t) => !t.start_at);
   const openToday = tasksToday.filter((t) => t.status !== 'done');

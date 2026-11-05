@@ -95,16 +95,16 @@ export default function TodayCalendar({ items }) {
           const Tag = it.link ? 'a' : 'div';
           return (
             <Tag key={it.key} href={it.link || undefined} target={it.link ? '_blank' : undefined} rel={it.link ? 'noopener noreferrer' : undefined}
-              title={`${fmt(it.start)}–${fmt(it.end)} · ${it.title}`}
+              title={`${fmt(it.start)}–${fmt(it.end)} · ${it.title}${it.late ? ' · overdue' : ''}`}
               style={{
                 position: 'absolute', top: top + 1, height: h,
                 left: `calc(${GUTTER}px + (100% - ${GUTTER + 6}px) * ${(it.col * widthPct) / 100})`,
                 width: `calc((100% - ${GUTTER + 6}px) * ${widthPct / 100} - 3px)`,
                 borderRadius: 8, padding: short ? '2px 6px' : '5px 7px', overflow: 'hidden', textDecoration: 'none',
-                fontSize: 12, lineHeight: 1.25, opacity: it.done ? 0.5 : 1, ...STYLE[it.kind],
+                fontSize: 12, lineHeight: 1.25, opacity: it.done ? 0.5 : 1, ...STYLE[it.kind], ...(it.late ? { borderColor: 'var(--negative)' } : {}),
               }}>
               <div style={{ fontWeight: 600, whiteSpace: short ? 'nowrap' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: it.done ? 'line-through' : 'none' }}>
-                {it.kind === 'task' ? (it.done ? '✓ ' : '○ ') : ''}{it.title}
+                {it.kind === 'task' ? (it.done ? '✓ ' : '○ ') : ''}{it.title}{it.late && <span style={{ color: 'var(--negative)', fontWeight: 500 }}> · overdue</span>}
               </div>
               {!short && <div style={{ color: 'var(--ink-muted)', fontSize: 11, marginTop: 2 }}>{fmt(it.start)} – {fmt(it.end)}</div>}
             </Tag>
