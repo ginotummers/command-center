@@ -6,6 +6,8 @@ import SyncButton from './components/SyncButton';
 import SourceIcon from './components/SourceIcon';
 import { setFocus } from './home-actions';
 import TodayCalendar from './components/TodayCalendar';
+import WishReminder from './components/WishReminder';
+import { WEEKLY, teachingFor, dubaiNow, periods, sectionItems, dueReminder } from '@/lib/wish';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +37,25 @@ export default async function Home({ searchParams }) {
     supabase.from('sync_runs').select('id,status,requested_at,finished_at,summary').order('requested_at', { ascending: false }).limit(1),
     supabase.from('work_daily').select('*').gte('date', addDays(today, -1)).order('date'),
   ]);
+  // Your Wish Is Your Command: compact widget + at most one reminder pop-up
+  const wNow = dubaiNow();
+  const wp = periods(wNow.date);
+  const [{ data: wSet }, { data: wChecks }, { data: wLog }] = await Promise.all([
+    supabase.from('wish_settings').select('*').maybeSingle(),
+    supabase.from('wish_checks').select('period_type,period_start,item_id').or(`and(period_type.eq.day,period_start.eq.${wp.day}),and(period_type.eq.week,period_start.eq.${wp.week})`),
+    supabase.from('wish_reminders').select('kind,period_start,action,snooze_until').in('period_start', [wp.day, wp.week]),
+  ]);
+  const wDay = (wChecks || []).filter((c) => c.period_type === 'day').map((c) => c.item_id);
+  const wWeek = (wChecks || []).filter((c) => c.period_type === 'week').map((c) => c.item_id);
+  const wCount = (ids, items) => ({ done: items.filter((i) => ids.includes(i.id)).length, total: items.length });
+  const wish = {
+    teaching: teachingFor(wNow.date),
+    aim: wSet?.chief_aim || null,
+    morning: wCount(wDay, sectionItems('morning')),
+    evening: wCount(wDay, sectionItems('evening')),
+    weekly: wCount(wWeek, WEEKLY),
+  };
+  const wishDue = dueReminder({ settings: wSet, now: wNow, progress: wish, log: wLog });
   const lastHealth = bm?.[0]?.date || null;
   const lastRun = runData?.[0] || null;
   const PRIO = { high: 0, medium: 1, low: 2 };
@@ -82,6 +103,7 @@ export default async function Home({ searchParams }) {
         </div>
         <SyncButton lastRun={lastRun} />
       </div>
+      {wishDue && <WishReminder kind={wishDue} />}
 
       <div className="row">
         <section className="card wide">
@@ -157,6 +179,31 @@ export default async function Home({ searchParams }) {
           {yesterday && <p className="muted" style={{ margin: '6px 0 0', fontSize: 13 }}>Yesterday: {yesterday.focus_hours ?? '—'} h focus{yesterday.last_activity ? `, finished ${String(yesterday.last_activity).slice(0, 5)}` : ''}</p>}
         </section>
       </div>
+
+
+      <section className="card" aria-labelledby="wish-widget-title" style={{ padding: 20 }}>
+        <div className="card-head" style={{ marginBottom: 10 }}>
+          <div><p className="overline" style={{ color: 'var(--gold)' }}>Manifesting · Kevin T.</p><h3 id="wish-widget-title" style={{ marginTop: 2 }}>Your Wish Is Your Command</h3></div>
+          <a href="/wish">Open →</a>
+        </div>
+        <div className="row" style={{ gap: 20, alignItems: 'center' }}>
+          <div style={{ flex: '2 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p className="wish-widget-teaching">{wish.teaching.text}</p>
+            {wish.aim
+              ? <a href="/wish" className="muted" style={{ fontSize: 13, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><span style={{ color: 'var(--gold)', fontWeight: 600 }}>Chief Aim · </span>{wish.aim}</a>
+              : <a href="/wish?edit=aim" style={{ fontSize: 13 }}>Set your Chief Aim →</a>}
+          </div>
+          <div style={{ flex: '1 1 240px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {[['Morning', wish.morning, '/wish?tab=daily#morning'], ['Evening', wish.evening, '/wish?tab=daily#evening'], ['This week', wish.weekly, '/wish?tab=weekly']].map(([label, p, href]) => (
+              <a key={label} href={href} style={{ color: 'var(--ink)', textDecoration: 'none', display: 'grid', gridTemplateColumns: '78px 1fr 40px', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                <span className="muted">{label}</span>
+                <span className="track" style={{ display: 'block', height: 6 }}><span className="bar" style={{ display: 'block', height: 6, width: `${(p.done / p.total) * 100}%` }} /></span>
+                <strong className={p.done === p.total ? 'pos' : ''} style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{p.done}/{p.total}</strong>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
 
       <div className="row">
         <a href="/finance" className="card tile" style={{ textDecoration: 'none', color: 'var(--ink)' }}>

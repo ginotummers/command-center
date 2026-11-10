@@ -7,6 +7,7 @@ const ITEMS = [
   ['/finance', 'Finance'],
   ['/health', 'Health'],
   ['/reflections', 'Reflections'],
+  ['/wish', 'Your Wish'],
 ];
 
 export default function Nav() {
