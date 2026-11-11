@@ -2,7 +2,7 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase';
-import { num, str } from '@/lib/util';
+import { num, str, todayIso } from '@/lib/util';
 
 const TABLES = ['income', 'expenses', 'net_worth_items'];
 
@@ -76,19 +76,36 @@ export async function addExpense(fd) {
   redirect(back(fd));
 }
 
+const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+
+// Each value is stored with the date you entered it, so every item (e.g. gold) builds its own history
 export async function addNetWorth(fd) {
   const supabase = await createClient();
   const value = num(fd.get('value'));
+  const enteredOn = isDate(fd.get('entered_on')) ? String(fd.get('entered_on')) : todayIso();
+  const month = `${enteredOn.slice(0, 7)}-01`;
   if (value !== null) {
     const type = str(fd.get('type')) || 'other';
     const { error } = await supabase.from('net_worth_items').insert({
-      month: String(fd.get('month')), kind: type === 'liability' ? 'liability' : 'asset', type,
+      month, entered_on: enteredOn, kind: type === 'liability' ? 'liability' : 'asset', type,
       label: str(fd.get('label')) || type, value,
     });
     if (error) throw new Error(error.message);
   }
   revalidatePath('/finance'); revalidatePath('/');
-  redirect(back(fd));
+  redirect(`/finance?m=${month.slice(0, 7)}`);
+}
+
+export async function updateNetWorth(fd) {
+  const supabase = await createClient();
+  const value = num(fd.get('value'));
+  const values = { label: str(fd.get('label')) || 'Item' };
+  if (value !== null) values.value = value;
+  if (isDate(fd.get('entered_on'))) { values.entered_on = String(fd.get('entered_on')); values.month = `${values.entered_on.slice(0, 7)}-01`; }
+  const { error } = await supabase.from('net_worth_items').update(values).eq('id', String(fd.get('id')));
+  if (error) throw new Error(error.message);
+  revalidatePath('/finance'); revalidatePath('/');
+  redirect(values.month ? `/finance?m=${values.month.slice(0, 7)}` : back(fd));
 }
 
 export async function removeRow(fd) {
@@ -113,7 +130,7 @@ export async function copyFromPrevious(fd) {
   ]);
   if (inc?.length) await supabase.from('income').insert(inc.map((r) => ({ ...r, month })));
   if (exp?.length) await supabase.from('expenses').insert(exp.map((r) => ({ ...r, month })));
-  if (nw?.length) await supabase.from('net_worth_items').insert(nw.map((r) => ({ ...r, month })));
+  if (nw?.length) await supabase.from('net_worth_items').insert(nw.map((r) => ({ ...r, month, entered_on: todayIso() })));
   revalidatePath('/finance'); revalidatePath('/');
   redirect(back(fd));
 }

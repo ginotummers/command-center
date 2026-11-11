@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase';
-import { eur, pct, monthStart, shiftMonth, monthLabel } from '@/lib/util';
-import { addIncome, addExpense, updateExpense, addNetWorth, removeRow, copyFromPrevious } from './actions';
+import { eur, pct, monthStart, shiftMonth, monthLabel, todayIso, fmtDate } from '@/lib/util';
+import { addIncome, addExpense, updateExpense, addNetWorth, updateNetWorth, removeRow, copyFromPrevious } from './actions';
 
 export const metadata = { title: 'Finance · Personal Operating Center' };
 const NW_TYPES = [['gold', 'Gold'], ['sp500', 'S&P 500'], ['bank', 'Bank'], ['other', 'Other asset'], ['liability', 'Liability']];
@@ -28,7 +28,7 @@ export default async function Money({ searchParams }) {
   const [{ data: income }, { data: expenses }, { data: nwAll }, { data: settings }, { data: prevExp }] = await Promise.all([
     supabase.from('income').select('*').eq('month', month).order('created_at'),
     supabase.from('expenses').select('*').eq('month', month).order('created_at'),
-    supabase.from('net_worth_items').select('*').order('month'),
+    supabase.from('net_worth_items').select('*').order('entered_on').order('created_at'),
     supabase.from('settings').select('expense_categories').maybeSingle(),
     supabase.from('expenses').select('amount').eq('month', prev),
   ]);
@@ -37,6 +37,21 @@ export default async function Money({ searchParams }) {
   const categories = [...new Set([...baseCats, ...(expenses || []).map((e) => e.category).filter(Boolean)])];
   const editing = sp?.edit ? (expenses || []).find((e) => e.id === sp.edit) : null;
   const nwThis = (nwAll || []).filter((r) => r.month === month);
+  const nwEdit = sp?.nwedit ? nwThis.find((r) => r.id === sp.nwedit) : null;
+  // Per-item history: the same type + label across all dates, oldest first
+  const itemKey = (r) => `${r.type}|${String(r.label || '').trim().toLowerCase()}`;
+  const itemHistory = {};
+  (nwAll || []).forEach((r) => { (itemHistory[itemKey(r)] = itemHistory[itemKey(r)] || []).push(r); });
+  const previousOf = (r) => { const list = itemHistory[itemKey(r)] || []; const i = list.findIndex((x) => x.id === r.id); return i > 0 ? list[i - 1] : null; };
+  const shortDate = (d) => (d ? new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
+  const moveCell = (r) => {
+    const p = previousOf(r);
+    if (!p) return <span className="muted">first entry</span>;
+    const d = Number(r.value) - Number(p.value);
+    const up = r.kind === 'liability' ? d <= 0 : d >= 0;
+    const pc = Number(p.value) ? (d / Math.abs(Number(p.value))) * 100 : null;
+    return <span className={d === 0 ? 'muted' : up ? 'pos' : 'neg'} title={`Previous: ${eur(p.value)} on ${shortDate(p.entered_on)}`}>{d > 0 ? '▲' : d < 0 ? '▼' : '='} {eur(Math.abs(d))}{pc !== null ? ` (${pct(Math.abs(pc))})` : ''}<span className="muted" style={{ display: 'block', fontSize: 11 }}>since {shortDate(p.entered_on)}</span></span>;
+  };
   const byMonth = {};
   (nwAll || []).forEach((r) => { byMonth[r.month] = byMonth[r.month] || []; byMonth[r.month].push(r); });
   const history = Object.keys(byMonth).sort().slice(-12).map((m) => ({ m, v: netWorth(byMonth[m]) }));
@@ -93,23 +108,58 @@ export default async function Money({ searchParams }) {
         <section className="card wide">
           <div className="card-head"><h2>Net worth</h2><span className="muted">{nwYtd !== null && nw !== null ? <>Since start of year: {delta(change(nw, nwYtd), '')}</> : null}</span></div>
           <div className="scroll"><table>
-            <thead><tr><th>Item</th><th>Type</th><th className="num">Value</th><th></th></tr></thead>
+            <thead><tr><th>Item</th><th>Entered</th><th className="num">Value</th><th>Change</th><th></th></tr></thead>
             <tbody>
-              {nwThis.map((r) => (
-                <tr key={r.id}><td>{r.label}</td><td className="muted">{NW_TYPES.find(([k]) => k === r.type)?.[1] || r.type}</td>
+              {nwThis.map((r) => nwEdit?.id === r.id ? (
+                <tr key={r.id}><td colSpan={5} style={{ background: 'var(--surface-sunken)' }}>
+                  <form action={updateNetWorth} className="grid2" style={{ alignItems: 'end', padding: '6px 2px' }}>
+                    <input type="hidden" name="id" value={r.id} />
+                    <input type="hidden" name="month" value={month} />
+                    <label>Label<input name="label" defaultValue={r.label || ''} /></label>
+                    <label>Date entered<input type="date" name="entered_on" defaultValue={r.entered_on} /></label>
+                    <label>Value (€)<input name="value" inputMode="decimal" defaultValue={r.value} required /></label>
+                    <div style={{ display: 'flex', gap: 10 }}><button className="btn small" type="submit">Save</button><a className="btn ghost small" href={`/finance?m=${month.slice(0, 7)}`}>Cancel</a></div>
+                  </form>
+                </td></tr>
+              ) : (
+                <tr key={r.id}><td>{r.label}<span className="muted" style={{ display: 'block', fontSize: 12 }}>{NW_TYPES.find(([k]) => k === r.type)?.[1] || r.type}</span></td>
+                  <td className="muted" style={{ whiteSpace: 'nowrap' }}>{shortDate(r.entered_on)}</td>
                   <td className={`num ${r.kind === 'liability' ? 'neg' : ''}`}>{r.kind === 'liability' ? '−' : ''}{eur(r.value)}</td>
-                  <td><Delete table="net_worth_items" id={r.id} month={month} /></td></tr>
+                  <td style={{ fontSize: 13, whiteSpace: 'nowrap' }}>{moveCell(r)}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}><a className="linkbtn" href={`/finance?m=${month.slice(0, 7)}&nwedit=${r.id}`}>Edit</a><Delete table="net_worth_items" id={r.id} month={month} /></td></tr>
               ))}
-              {nwThis.length > 0 && <tr><td><strong>Total</strong></td><td></td><td className="num"><strong>{eur(nw)}</strong></td><td></td></tr>}
+              {nwThis.length > 0 && <tr><td><strong>Total</strong></td><td></td><td className="num"><strong>{eur(nw)}</strong></td><td></td><td></td></tr>}
             </tbody>
           </table></div>
           <form action={addNetWorth} className="grid2" style={{ marginTop: 14, alignItems: 'end' }}>
             <input type="hidden" name="month" value={month} />
             <label>Type<select name="type">{NW_TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-            <label>Label<input name="label" placeholder="Gold (physical)" /></label>
+            <label>Label<input name="label" placeholder="Gold (physical)" list="nw-labels" /></label>
             <label>Value (€)<input name="value" inputMode="decimal" required /></label>
+            <label>Date<input type="date" name="entered_on" defaultValue={todayIso()} /></label>
             <button className="btn" type="submit">Add</button>
           </form>
+          <datalist id="nw-labels">{[...new Set((nwAll || []).map((r) => r.label).filter(Boolean))].map((l) => <option key={l} value={l} />)}</datalist>
+          <p className="muted" style={{ margin: '8px 0 0', fontSize: 12 }}>Use the same label each month (e.g. “Gold”) so its history and change line up.</p>
+          {Object.values(itemHistory).some((l) => l.length > 1) && (
+            <details className="fold" style={{ marginTop: 14 }}>
+              <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>History per item</span></summary>
+              <div style={{ padding: '6px 16px 14px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {Object.values(itemHistory).filter((l) => l.length > 1).map((list) => (
+                  <div key={list[0].id}>
+                    <strong>{list[list.length - 1].label}</strong>
+                    <div className="scroll"><table>
+                      <thead><tr><th>Date</th><th className="num">Value</th><th className="num">Change</th></tr></thead>
+                      <tbody>{[...list].reverse().map((r, i, arr) => { const p = arr[i + 1]; const d = p ? Number(r.value) - Number(p.value) : null; return (
+                        <tr key={r.id}><td>{shortDate(r.entered_on)}</td><td className="num">{eur(r.value)}</td>
+                          <td className={`num ${d === null || d === 0 ? 'muted' : (r.kind === 'liability' ? d < 0 : d > 0) ? 'pos' : 'neg'}`}>{d === null ? '—' : `${d > 0 ? '+' : d < 0 ? '−' : ''}${eur(Math.abs(d))}`}</td></tr>
+                      ); })}</tbody>
+                    </table></div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </section>
         <section className="card narrow">
           <h2 style={{ marginBottom: 4 }}>Net worth over time</h2>
