@@ -154,6 +154,7 @@ export async function saveBoardTitle(t) {
   const { supabase } = await client();
   await upsertSettings(supabase, {
     board_title: String(t?.text || 'Vision Board').slice(0, 80),
+    board_font: ['caveat', 'kalam', 'patrick', 'architects'].includes(t?.font) ? t.font : 'caveat',
     board_title_x: num(t?.x, 0, BOARD_W) ?? 800,
     board_title_y: num(t?.y, 0, BOARD_H) ?? 500,
   });

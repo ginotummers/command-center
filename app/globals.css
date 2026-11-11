@@ -157,8 +157,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .vb-wrap.full { border-radius: 0; border: 0; height: 100vh; width: 100vw; }
 .vb-exit { position: absolute; top: 14px; right: 16px; z-index: 100000; background: rgba(0,3,16,0.7); }
 .vb-canvas { position: absolute; transform-origin: 0 0; }
-.vb-title { position: absolute; transform: translate(-50%, -50%); z-index: 5; font-family: var(--font-marker), 'Permanent Marker', cursive; font-size: 84px; line-height: 1.1; color: #F4EBDD; white-space: nowrap; cursor: grab; touch-action: none; padding: 6px 18px; border-radius: 10px; border: 2px dashed transparent; text-shadow: 0 2px 0 rgba(0,0,0,0.35); }
-.vb-title.sel { border-color: rgba(178,141,81,0.6); }
+.vb-title { position: absolute; transform: translate(-50%, -50%); z-index: 5; line-height: 1.1; color: #F4EBDD; white-space: nowrap; cursor: grab; touch-action: none; padding: 70px 110px; border-radius: 50%; letter-spacing: 0.01em; text-shadow: 0 2px 0 rgba(0,0,0,0.35); }
+.vb-circle { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.vb-circle path { fill: none; stroke: #D9B877; stroke-width: 5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.vb-title.sel .vb-circle path { stroke: #4C8DFF; }
+.vb-font { flex-direction: row; align-items: center; gap: 8px; font-size: 13px; }
+.vb-font select { min-height: 34px; padding: 4px 10px; width: auto; }
 .vb-title input { font: inherit; color: inherit; background: rgba(0,3,16,0.5); border: 0; outline: 2px solid var(--gold); border-radius: 8px; width: 900px; text-align: center; padding: 0 10px; min-height: 0; }
 .vb-card { position: absolute; margin: 0; padding: 10px 10px 12px; background: #FBF8F2; border-radius: 4px; box-shadow: 0 10px 28px rgba(0,0,0,0.45), 0 2px 4px rgba(0,0,0,0.3); cursor: grab; touch-action: none; transform-origin: 50% 50%; }
 .vb-card:active { cursor: grabbing; }

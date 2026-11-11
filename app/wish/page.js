@@ -204,7 +204,7 @@ export default async function WishPage({ searchParams }) {
           <div className="card-head"><h2>Vision Board</h2><span className="muted" style={{ fontSize: 13 }}>A digital copy of your physical board</span></div>
           <VisionCanvas
             userId={user.id}
-            initialTitle={{ text: s.board_title || 'Vision Board', x: s.board_title_x ?? 800, y: s.board_title_y ?? 500 }}
+            initialTitle={{ text: s.board_title || 'Vision Board', x: s.board_title_x ?? 800, y: s.board_title_y ?? 500, font: s.board_font || 'caveat' }}
             initialItems={(vision || []).filter((v) => signed[v.image_path]).map((v, i) => ({
               id: v.id, url: signed[v.image_path], title: v.title, is_chief: v.is_chief,
               x: v.x ?? 80 + (i % 5) * 300, y: v.y ?? 60 + Math.floor(i / 5) * 280, w: v.w || 250, rot: v.rot || 0, z: v.z || 0,

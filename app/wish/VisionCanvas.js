@@ -9,6 +9,13 @@ import { addVisionImages, updateVisionItem, removeVisionItem, saveBoardTitle } f
 const W = 1600;
 const H = 1000;
 
+export const FONTS = {
+  caveat: { label: 'Caveat', family: "var(--font-hw-caveat), 'Caveat', cursive", weight: 700, size: 96 },
+  kalam: { label: 'Kalam', family: "var(--font-hw-kalam), 'Kalam', cursive", weight: 700, size: 80 },
+  patrick: { label: 'Patrick Hand', family: "var(--font-hw-patrick), 'Patrick Hand', cursive", weight: 400, size: 90 },
+  architects: { label: 'Architects Daughter', family: "var(--font-hw-architects), 'Architects Daughter', cursive", weight: 400, size: 70 },
+};
+
 export default function VisionCanvas({ userId, initialItems, initialTitle }) {
   const wrap = useRef(null);
   const [scale, setScale] = useState(0.5);
@@ -169,8 +176,17 @@ export default function VisionCanvas({ userId, initialItems, initialTitle }) {
           </>
         ) : selected === 'title' ? (
           <button type="button" className="btn ghost small" onClick={() => setEditingTitle(true)}>Edit title</button>
-        ) : (
-          <span className="muted" style={{ fontSize: 13 }}>Drag photos anywhere. Click one to resize, tilt or mark it as your Chief Aim.</span>
+        ) : null}
+        {!sel && (
+          <label className="vb-font" onPointerDown={(e) => e.stopPropagation()}>
+            <span className="muted">Font</span>
+            <select value={title.font} onChange={(e) => { const t = { ...title, font: e.target.value }; setTitle(t); saveBoardTitle(t).catch(() => {}); }}>
+              {Object.entries(FONTS).map(([k, f]) => <option key={k} value={k}>{f.label}</option>)}
+            </select>
+          </label>
+        )}
+        {!sel && selected !== 'title' && (
+          <span className="muted" style={{ fontSize: 13 }}>Drag photos anywhere. Click one to resize or tilt it.</span>
         )}
         <span style={{ flex: 1 }} />
         {busy && <span className="muted" style={{ fontSize: 13 }} aria-live="polite">{busy}</span>}
@@ -185,7 +201,7 @@ export default function VisionCanvas({ userId, initialItems, initialTitle }) {
         <div className="vb-canvas" style={{ width: W, height: H, transform: `scale(${scale})`, left: full ? `calc(50% - ${(W * scale) / 2}px)` : 0, top: full ? `calc(50% - ${(H * scale) / 2}px)` : 0 }}>
           <div
             className={`vb-title${selected === 'title' ? ' sel' : ''}`}
-            style={{ left: title.x, top: title.y }}
+            style={{ left: title.x, top: title.y, fontFamily: (FONTS[title.font] || FONTS.caveat).family, fontWeight: (FONTS[title.font] || FONTS.caveat).weight, fontSize: (FONTS[title.font] || FONTS.caveat).size }}
             onPointerDown={(e) => { e.stopPropagation(); startTitle(e); }}
             onDoubleClick={() => setEditingTitle(true)}
           >
@@ -199,6 +215,11 @@ export default function VisionCanvas({ userId, initialItems, initialTitle }) {
                 aria-label="Board title"
               />
             ) : title.text}
+            {/* hand-drawn circle: two slightly offset loops, like a marker going round twice */}
+            <svg className="vb-circle" viewBox="0 0 200 100" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M104 6 C 160 4, 197 24, 196 50 C 195 78, 152 96, 98 95 C 44 94, 4 78, 4 50 C 4 22, 46 5, 108 7 C 150 9, 182 20, 190 34" />
+              <path d="M96 9 C 150 8, 192 27, 192 52 C 191 76, 150 92, 100 92 C 50 92, 8 76, 8 50 C 9 25, 52 9, 112 11" opacity="0.55" />
+            </svg>
           </div>
 
           {items.map((it) => (
