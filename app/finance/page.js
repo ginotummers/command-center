@@ -324,15 +324,18 @@ export default async function Money({ searchParams }) {
           </details>
 
           <div className="fold-list" style={{ marginTop: 8 }}>
-            {states.map(({ account: a, latest: b, history }) => {
-              const gain = a.kind === 'investment' && b && b.invested_eur !== null && b.invested_eur !== undefined ? liveEur(b) - basisEur(b) : null;
+            {(() => {
+              // Largest balance first; top 2 visible, the rest folded (opens if you're editing one of them)
+              const sorted = [...states].sort((x, y) => basisEur(y.latest) - basisEur(x.latest) || (x.account.sort - y.account.sort));
+              const row = ({ account: a, latest: b, history }) => {
+                const gain = a.kind === 'investment' && b && b.invested_eur !== null && b.invested_eur !== undefined ? liveEur(b) - basisEur(b) : null;
               return (
                 <details key={a.id} className="fold" open={(!!editBal && history.some((h) => h.id === editBal.id)) || editAcc?.id === a.id}>
                   <summary>
                     <Chev />
                     <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ fontWeight: 600 }}>{a.name}</span>
-                      <span className="muted" style={{ display: 'block', fontSize: 12 }}>{KIND_LABEL[a.kind]} · {a.currency}{b ? ` · as of ${shortDate(b.date)}` : ' · not entered yet'}</span>
+                      <span style={{ fontWeight: 600 }}>{a.name}</span> <span className="tag cur-tag">{a.currency}</span>
+                      <span className="muted" style={{ display: 'block', fontSize: 12 }}>{KIND_LABEL[a.kind]}{b ? ` · as of ${shortDate(b.date)}` : ' · not entered yet'}</span>
                     </span>
                     {gain !== null && <span className={gain >= 0 ? 'pos' : 'neg'} style={{ fontSize: 13, whiteSpace: 'nowrap' }}>{gain >= 0 ? '▲' : '▼'} {eur(Math.abs(gain))} value</span>}
                     <span style={{ textAlign: 'right' }}>
@@ -374,14 +377,39 @@ export default async function Money({ searchParams }) {
                         <input type="hidden" name="id" value={a.id} /><Hidden month={month} scope={scope} />
                         <label>Name<input name="name" defaultValue={a.name} /></label>
                         <label>Type<select name="kind" defaultValue={a.kind}>{Object.entries(KIND_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+                        <label>Currency<select name="currency" defaultValue={a.currency}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select></label>
                         <label className="check"><input type="checkbox" name="archived" defaultChecked={a.archived} /> Archive (hide this account)</label>
                         <div style={{ display: 'flex', gap: 10 }}><button className="btn small" type="submit">Save</button>{cancel()}</div>
+                        <p className="muted" style={{ margin: 0, fontSize: 12, gridColumn: '1 / -1' }}>Changing the currency applies to new balances; earlier balances keep the currency they were entered in.</p>
                       </form>
-                    ) : <a className="linkbtn" href={qs({ aedit: a.id })} style={{ display: 'inline-block', marginTop: 8 }}>Edit account</a>}
+                    ) : (
+                      <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+                        <a className="linkbtn" href={qs({ aedit: a.id })}>Edit account</a>
+                        <form action={addAccount} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <Hidden month={month} scope={scope} /><input type="hidden" name="name" value={a.name} /><input type="hidden" name="kind" value={a.kind} />
+                          <select name="currency" aria-label={`Add a currency to ${a.name}`} defaultValue={CURRENCIES.find((c) => c !== a.currency)} style={{ minHeight: 32, padding: '4px 8px', width: 'auto' }}>{CURRENCIES.filter((c) => c !== a.currency).map((c) => <option key={c}>{c}</option>)}</select>
+                          <button className="linkbtn" type="submit">+ Add this currency to {a.name}</button>
+                        </form>
+                      </div>
+                    )}
                   </div>
                 </details>
               );
-            })}
+              };
+              const isOpen = (st) => (!!editBal && st.history.some((h) => h.id === editBal.id)) || editAcc?.id === st.account.id;
+              const rest = sorted.slice(2);
+              return (
+                <>
+                  {sorted.slice(0, 2).map(row)}
+                  {rest.length > 0 && (
+                    <details className="more-fold" open={rest.some(isOpen) || open === 'accounts'}>
+                      <summary><span className="when-closed">Show {rest.length} more account{rest.length === 1 ? '' : 's'} ▾</span><span className="when-open">Show less ▴</span></summary>
+                      <div className="fold-list" style={{ marginTop: 8 }}>{rest.map(row)}</div>
+                    </details>
+                  )}
+                </>
+              );
+            })()}
             <details className="fold add-fold" open={open === 'accounts' && !editBal}>
               <summary><span className="fold-plus" aria-hidden="true">+</span><span style={{ flex: 1, fontWeight: 600 }}>Add account</span></summary>
               <form action={addAccount} className="grid2 fold-body" style={{ alignItems: 'end' }}>

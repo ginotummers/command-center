@@ -122,6 +122,7 @@ export async function addAccount(fd) {
 export async function updateAccount(fd) {
   const supabase = await createClient();
   const values = { name: str(fd.get('name')) || 'Account', archived: fd.get('archived') === 'on' };
+  if (CURRENCIES.includes(String(fd.get('currency')))) values.currency = String(fd.get('currency'));
   const kind = String(fd.get('kind'));
   if (['bank', 'cash', 'investment', 'reserved', 'other'].includes(kind)) values.kind = kind;
   const { error } = await supabase.from('accounts').update(values).eq('id', String(fd.get('id')));
