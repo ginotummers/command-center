@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase';
 import { eur, pct, monthStart, shiftMonth, monthLabel } from '@/lib/util';
-import { addIncome, addExpense, addNetWorth, removeRow, copyFromPrevious } from './actions';
+import { addIncome, addExpense, updateExpense, addNetWorth, removeRow, copyFromPrevious } from './actions';
 
 export const metadata = { title: 'Finance · Personal Operating Center' };
 const NW_TYPES = [['gold', 'Gold'], ['sp500', 'S&P 500'], ['bank', 'Bank'], ['other', 'Other asset'], ['liability', 'Liability']];
@@ -10,7 +10,7 @@ const netWorth = (rows) => (rows || []).reduce((a, r) => a + (r.kind === 'liabil
 
 function Delete({ table, id, month }) {
   return (
-    <form action={removeRow}>
+    <form action={removeRow} style={{ display: 'inline' }}>
       <input type="hidden" name="table" value={table} />
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="month" value={month} />
@@ -32,7 +32,10 @@ export default async function Money({ searchParams }) {
     supabase.from('settings').select('expense_categories').maybeSingle(),
     supabase.from('expenses').select('amount').eq('month', prev),
   ]);
-  const categories = settings?.expense_categories || ['housing', 'food', 'supplements', 'subscriptions', 'transport', 'personal', 'business', 'giving', 'other'];
+  const baseCats = settings?.expense_categories || ['housing', 'food', 'supplements', 'subscriptions', 'transport', 'personal', 'business', 'giving', 'other'];
+  // include any category already used on an expense, so nothing falls out of the breakdown
+  const categories = [...new Set([...baseCats, ...(expenses || []).map((e) => e.category).filter(Boolean)])];
+  const editing = sp?.edit ? (expenses || []).find((e) => e.id === sp.edit) : null;
   const nwThis = (nwAll || []).filter((r) => r.month === month);
   const byMonth = {};
   (nwAll || []).forEach((r) => { byMonth[r.month] = byMonth[r.month] || []; byMonth[r.month].push(r); });
@@ -158,23 +161,42 @@ export default async function Money({ searchParams }) {
           <div className="scroll"><table>
             <thead><tr><th>Expense</th><th>Category</th><th className="num">Amount</th><th></th></tr></thead>
             <tbody>
-              {(expenses || []).map((r) => (
+              {(expenses || []).map((r) => editing?.id === r.id ? (
+                <tr key={r.id} id={`exp-${r.id}`}>
+                  <td colSpan={4} style={{ background: 'var(--surface-sunken)', borderRadius: 12 }}>
+                    <form action={updateExpense} style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '6px 2px' }}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <input type="hidden" name="month" value={month} />
+                      <div className="grid2">
+                        <label>Expense<input name="name" defaultValue={r.name || ''} /></label>
+                        <label>Category<input name="category" list="expense-categories" defaultValue={r.category || ''} placeholder="Pick or type a new one" /></label>
+                        <label>Amount (€)<input name="amount" inputMode="decimal" defaultValue={r.amount} required /></label>
+                        <label>Link (optional)<input name="link" type="url" defaultValue={r.link || ''} placeholder="https://" /></label>
+                      </div>
+                      <label>Note (optional)<textarea name="note" defaultValue={r.note || ''} style={{ minHeight: 60 }} /></label>
+                      <label className="check"><input type="checkbox" name="recurring" defaultChecked={r.recurring} /> Recurring monthly</label>
+                      <div style={{ display: 'flex', gap: 10 }}><button className="btn small" type="submit">Save</button><a className="btn ghost small" href={`/finance?m=${month.slice(0, 7)}`}>Cancel</a></div>
+                    </form>
+                  </td>
+                </tr>
+              ) : (
                 <tr key={r.id}>
                   <td>{r.name}{r.recurring ? <span className="muted"> · monthly</span> : null}
                     {r.link ? <> · <a href={r.link} target="_blank" rel="noopener noreferrer">link ↗</a></> : null}
                     {r.note ? <div className="muted" style={{ fontSize: 12 }}>{r.note}</div> : null}</td>
                   <td className="muted" style={{ textTransform: 'capitalize' }}>{r.category}</td>
                   <td className="num">{eur(r.amount)}</td>
-                  <td><Delete table="expenses" id={r.id} month={month} /></td>
+                  <td style={{ whiteSpace: 'nowrap' }}><a className="linkbtn" href={`/finance?m=${month.slice(0, 7)}&edit=${r.id}#exp-${r.id}`}>Edit</a><Delete table="expenses" id={r.id} month={month} /></td>
                 </tr>
               ))}
             </tbody>
           </table></div>
+          <datalist id="expense-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
           <form action={addExpense} style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
             <input type="hidden" name="month" value={month} />
             <div className="grid2">
               <label>Expense<input name="name" placeholder="Supplements" /></label>
-              <label>Category<select name="category">{categories.map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
+              <label>Category<input name="category" list="expense-categories" placeholder="Pick or type a new one" required /></label>
               <label>Amount (€)<input name="amount" inputMode="decimal" required /></label>
               <label>Link (optional)<input name="link" type="url" placeholder="https://" /></label>
             </div>

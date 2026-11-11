@@ -33,12 +33,41 @@ export async function addIncome(fd) {
   redirect(back(fd));
 }
 
+const DEFAULT_CATS = ['housing', 'food', 'supplements', 'subscriptions', 'transport', 'personal', 'business', 'giving', 'other'];
+
+// Normalise a typed category and remember new ones so they show up in the list next time
+async function category(supabase, raw) {
+  const c = (str(raw) || 'other').toLowerCase().replace(/\s+/g, ' ').slice(0, 40);
+  const { data: row } = await supabase.from('settings').select('expense_categories').maybeSingle();
+  const list = row?.expense_categories || DEFAULT_CATS;
+  if (!list.includes(c)) {
+    const next = [...list, c];
+    if (row) await supabase.from('settings').update({ expense_categories: next }).not('user_id', 'is', null);
+    else await supabase.from('settings').insert({ expense_categories: next });
+  }
+  return c;
+}
+
+export async function updateExpense(fd) {
+  const supabase = await createClient();
+  const amount = num(fd.get('amount'));
+  const values = {
+    name: str(fd.get('name')) || 'Expense', category: await category(supabase, fd.get('category')),
+    recurring: fd.get('recurring') === 'on', link: safeLink(fd.get('link')), note: str(fd.get('note')),
+  };
+  if (amount !== null) values.amount = amount;
+  const { error } = await supabase.from('expenses').update(values).eq('id', String(fd.get('id')));
+  if (error) throw new Error(error.message);
+  revalidatePath('/finance'); revalidatePath('/');
+  redirect(back(fd));
+}
+
 export async function addExpense(fd) {
   const supabase = await createClient();
   const amount = num(fd.get('amount'));
   if (amount !== null) {
     const { error } = await supabase.from('expenses').insert({
-      month: String(fd.get('month')), name: str(fd.get('name')) || 'Expense', category: str(fd.get('category')) || 'other',
+      month: String(fd.get('month')), name: str(fd.get('name')) || 'Expense', category: await category(supabase, fd.get('category')),
       amount, recurring: fd.get('recurring') === 'on', link: safeLink(fd.get('link')), note: str(fd.get('note')),
     });
     if (error) throw new Error(error.message);
