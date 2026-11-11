@@ -18,7 +18,11 @@ export function niceTicks(min, max, count = 4) {
   return { lo, hi, ticks };
 }
 
-export default function LineChart({ points, color = 'var(--gold)', label = 'Value', area = false }) {
+// unit '€' formats as euros; anything else (e.g. ' kg', '%', '') as a plain number + unit
+const fmtU = (n, unit, d) => (unit === '€' ? fmt(n) : `${Number(n).toFixed(d).replace(/\.0+$/, '')}${unit}`);
+const tickU = (n, unit, d) => (unit === '€' ? compact(n) : `${Number(n).toFixed(d).replace(/\.0+$/, '')}${unit}`);
+
+export default function LineChart({ points, color = 'var(--gold)', label = 'Value', area = false, unit = '€', decimals = 1 }) {
   const [hover, setHover] = useState(null);
   const svg = useRef(null);
   const box = useRef(null);
@@ -55,12 +59,12 @@ export default function LineChart({ points, color = 'var(--gold)', label = 'Valu
 
   return (
     <div ref={box} className="lc" style={{ position: 'relative' }}>
-      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`${label} by month`}
+      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`${label} by month`}
         onPointerMove={onMove} onPointerLeave={() => setHover(null)} style={{ display: 'block', touchAction: 'pan-y' }}>
         {ticks.map((t) => (
           <g key={t}>
             <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeWidth="1" />
-            <text x={PAD.l - 10} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--ink-muted)">{compact(t)}</text>
+            <text x={PAD.l - 10} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--ink-muted)">{tickU(t, unit, decimals)}</text>
           </g>
         ))}
         {points.map((p, i) => ((n <= 7 || W >= 520 || i % 2 === (n - 1) % 2 || hover === i) &&
@@ -83,9 +87,9 @@ export default function LineChart({ points, color = 'var(--gold)', label = 'Valu
       {hp && (
         <div className="lc-tip" style={{ left: `${(x(hover) / W) * 100}%`, top: `${(y(hp.value) / H) * 100}%` }}>
           <span className="muted" style={{ fontSize: 11 }}>{hp.label}</span>
-          <strong>{fmt(hp.value)}</strong>
+          <strong>{fmtU(hp.value, unit, decimals)}</strong>{hp.note ? <span style={{ fontSize: 11 }} className="muted">{hp.note}</span> : null}
           {prevVal !== undefined && prevVal !== 0 && (
-            <span style={{ fontSize: 11 }} className="muted">{hp.value >= prevVal ? '▲' : '▼'} {fmt(Math.abs(hp.value - prevVal))} vs previous</span>
+            <span style={{ fontSize: 11 }} className="muted">{hp.value >= prevVal ? '▲' : '▼'} {fmtU(Math.abs(hp.value - prevVal), unit, decimals)} vs previous</span>
           )}
         </div>
       )}

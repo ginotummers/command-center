@@ -31,7 +31,7 @@ export default function BarChart({ points, color = '#C9A15F', label = 'Value', c
 
   return (
     <div ref={box} className="lc" style={{ position: 'relative' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`${label} by month`} style={{ display: 'block' }} onPointerLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`${label} by month`} style={{ display: 'block' }} onPointerLeave={() => setHover(null)}>
         {ticks.map((t) => (
           <g key={t}>
             <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeWidth="1" />

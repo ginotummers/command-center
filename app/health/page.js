@@ -1,36 +1,36 @@
 import { createClient } from '@/lib/supabase';
 import { fmtDate, todayIso, addDays } from '@/lib/util';
-import { addBodyMetric, addWorkouts, addDaily, removeHealthRow } from './actions';
+import { dubaiNow } from '@/lib/wish';
+import LineChart from '../components/LineChart';
+import { addBodyMetric, addWorkouts, addDaily, removeHealthRow, savePlan, logNutrition } from './actions';
 
 export const metadata = { title: 'Health · Personal Operating Center' };
+export const dynamic = 'force-dynamic';
 
 const n1 = (v, d = 1) => (v === null || v === undefined ? '—' : Number(v).toFixed(d).replace(/\.0$/, ''));
+const PHASE_LABEL = { bulking: 'Bulking', cutting: 'Cutting', maintenance: 'Maintenance' };
+const DAYS = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
+const DAY_TYPE = { training: 'Training day', rest: 'Rest day', off: 'Off day' };
+const shortD = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 function Remove({ table, id, anchor }) {
   return (
-    <form action={removeHealthRow}>
+    <form action={removeHealthRow} style={{ display: 'inline' }}>
       <input type="hidden" name="table" value={table} /><input type="hidden" name="id" value={id} /><input type="hidden" name="anchor" value={anchor} />
       <button className="linkbtn" type="submit">Remove</button>
     </form>
   );
 }
 
-function Delta({ now, before, unit, lowerIsBetter }) {
-  if (now === null || now === undefined || before === null || before === undefined) return <span className="muted">No earlier entry to compare</span>;
-  const d = Number(now) - Number(before);
-  if (Math.abs(d) < 0.05) return <span className="muted">No change</span>;
-  const good = lowerIsBetter ? d < 0 : d > 0;
-  return <span className={good ? 'pos' : 'neg'}>{d > 0 ? '▲' : '▼'} {n1(Math.abs(d))}{unit} vs ~2 weeks ago</span>;
-}
-
-// Latest value of a field, and the latest value at least 14 days before it
-function trend(rows, key) {
-  const withVal = rows.filter((r) => r[key] !== null && r[key] !== undefined);
-  if (!withVal.length) return { now: null, before: null, date: null };
-  const last = withVal[withVal.length - 1];
-  const cutoff = addDays(last.date, -14);
-  const prev = [...withVal].reverse().find((r) => r.date <= cutoff);
-  return { now: last[key], before: prev ? prev[key] : null, date: last.date };
+// Change since the previous entry that has this value
+function Delta({ rows, k, unit, good = 'up' }) {
+  const v = rows.filter((r) => r[k] !== null && r[k] !== undefined);
+  if (v.length < 2) return <span className="muted">{v.length ? `As of ${fmtDate(v[v.length - 1].date)}` : 'Not logged yet'}</span>;
+  const a = v[v.length - 1]; const b = v[v.length - 2];
+  const d = Number(a[k]) - Number(b[k]);
+  if (Math.abs(d) < 0.05) return <span className="muted">No change since {shortD(b.date)}</span>;
+  const isGood = good === 'up' ? d > 0 : good === 'down' ? d < 0 : null;
+  return <span className={isGood === null ? 'muted' : isGood ? 'pos' : 'neg'}>{d > 0 ? '▲' : '▼'} {n1(Math.abs(d))}{unit} since {shortD(b.date)}</span>;
 }
 
 function verdict(latest, prev) {
@@ -48,18 +48,26 @@ function verdict(latest, prev) {
 export default async function Health() {
   const supabase = await createClient();
   const today = todayIso();
-  const [{ data: bmData }, { data: woData }, { data: dailyData }] = await Promise.all([
+  const weekday = dubaiNow().weekday;
+  const [{ data: bmData }, { data: woData }, { data: dailyData }, { data: planRow }, { data: nutData }] = await Promise.all([
     supabase.from('body_metrics').select('*').order('date'),
     supabase.from('workout_entries').select('*').order('date'),
     supabase.from('health_daily').select('*').gte('date', addDays(today, -13)).order('date'),
+    supabase.from('health_plan').select('*').maybeSingle(),
+    supabase.from('nutrition_log').select('*').gte('date', addDays(today, -59)).order('date'),
   ]);
-  const bm = bmData || []; const wo = woData || []; const daily = dailyData || [];
-  const weight = trend(bm, 'weight_kg'); const fat = trend(bm, 'body_fat_pct'); const muscle = trend(bm, 'muscle_mass_kg');
-  const recentBm = bm.slice(-12);
-  const maxW = Math.max(1, ...recentBm.map((r) => Number(r.weight_kg || 0)));
-  const minW = Math.min(...recentBm.filter((r) => r.weight_kg).map((r) => Number(r.weight_kg)), maxW);
+  const bm = bmData || []; const wo = woData || []; const daily = dailyData || []; const nut = nutData || [];
+  const plan = planRow || {};
+  const split = plan.split || {};
+  const todaySession = split[String(weekday)] || null;
+  const todayType = todaySession && !/rest/i.test(todaySession) ? 'training' : 'rest';
+  const target = { training: plan.kcal_training, rest: plan.kcal_rest, off: plan.kcal_off };
+  const latestOf = (k) => [...bm].reverse().find((r) => r[k] !== null && r[k] !== undefined) || null;
+  const lw = latestOf('weight_kg'); const lf = latestOf('body_fat_pct'); const lm = latestOf('muscle_mass_kg'); const lb = latestOf('bmi');
+  const lastScan = [...bm].reverse().find((r) => r.source === 'inbody' && r.details) || null;
+  const series = (k) => bm.filter((r) => r[k] !== null && r[k] !== undefined).slice(-16)
+    .map((r) => ({ label: fmtDate(r.date), short: shortD(r.date), value: Number(r[k]), note: [r.phase ? PHASE_LABEL[r.phase] : null, r.source === 'inbody' ? 'InBody scan' : null].filter(Boolean).join(' · ') || null }));
 
-  // Per exercise: latest session vs the latest session at least 14 days earlier
   const exercises = [...new Set(wo.map((r) => r.exercise))].map((name) => {
     const rows = wo.filter((r) => r.exercise === name);
     const latest = rows[rows.length - 1];
@@ -70,30 +78,91 @@ export default async function Health() {
   const last7 = daily.filter((r) => r.date > addDays(today, -7));
   const avg = (k) => { const v = last7.filter((r) => r[k] !== null); return v.length ? v.reduce((a, r) => a + Number(r[k]), 0) / v.length : null; };
   const sleep = avg('sleep_minutes');
-  const sessions = new Set(wo.filter((r) => r.date > addDays(today, -7)).map((r) => r.date)).size;
+  const nutToday = nut.find((r) => r.date === today);
+  const nutPoints = nut.filter((r) => r.calories).slice(-30).map((r) => ({ label: `${fmtDate(r.date)} · ${DAY_TYPE[r.day_type]}`, short: shortD(r.date), value: r.calories, note: target[r.day_type] ? `Target ${target[r.day_type]} kcal` : null }));
+  const nut7 = nut.filter((r) => r.date > addDays(today, -7) && r.calories);
+  const onTarget = nut7.filter((r) => target[r.day_type] && Math.abs(r.calories - target[r.day_type]) <= target[r.day_type] * 0.1).length;
 
   return (
     <>
-      <div>
-        <p className="overline">Health</p>
-        <h1>Body &amp; training</h1>
-        <p className="muted" style={{ margin: '6px 0 0' }}>Log once a week from your Kahunas and Apple Health screenshots. Training compares each exercise with two weeks earlier.</p>
-      </div>
-
-      <div className="hint">
-        <strong>Quickest way to fill this in:</strong> send your weekly Kahunas and Apple Health screenshots to Claude in chat and say “update my health”. Claude reads the numbers and saves them here for you. You can also type them in below.
+      <div className="section-title" style={{ alignItems: 'flex-end' }}>
+        <div>
+          <p className="overline">Health</p>
+          <h1>Body &amp; training</h1>
+        </div>
+        {plan.phase && <span className={`phase-badge ${plan.phase}`}>{PHASE_LABEL[plan.phase]} phase</span>}
       </div>
 
       <div className="row">
-        <section className="card tile"><p className="muted" style={{ margin: 0 }}>Weight</p><p className="stat">{weight.now === null ? '—' : `${n1(weight.now)} kg`}</p><Delta now={weight.now} before={weight.before} unit=" kg" lowerIsBetter /></section>
-        <section className="card tile"><p className="muted" style={{ margin: 0 }}>Body fat</p><p className="stat">{fat.now === null ? '—' : `${n1(fat.now)}%`}</p><Delta now={fat.now} before={fat.before} unit="%" lowerIsBetter /></section>
-        <section className="card tile"><p className="muted" style={{ margin: 0 }}>Muscle mass</p><p className="stat">{muscle.now === null ? '—' : `${n1(muscle.now)} kg`}</p><Delta now={muscle.now} before={muscle.before} unit=" kg" /></section>
-        <section className="card tile"><p className="muted" style={{ margin: 0 }}>Last 7 days</p><p className="stat">{sessions} {sessions === 1 ? 'workout' : 'workouts'}</p><span className="muted">{sleep ? `Sleep ${Math.floor(sleep / 60)} h ${String(Math.round(sleep % 60)).padStart(2, '0')} avg` : 'No sleep logged'}</span></section>
+        <section className="card tile"><p className="muted" style={{ margin: 0 }}>Weight</p><p className="stat">{lw ? `${n1(lw.weight_kg, 2)} kg` : '—'}</p><Delta rows={bm} k="weight_kg" unit=" kg" good={plan.phase === 'cutting' ? 'down' : plan.phase === 'bulking' ? 'up' : null} /></section>
+        <section className="card tile"><p className="muted" style={{ margin: 0 }}>Body fat</p><p className="stat">{lf ? `${n1(lf.body_fat_pct)}%` : '—'}</p><Delta rows={bm} k="body_fat_pct" unit="%" good="down" /></section>
+        <section className="card tile"><p className="muted" style={{ margin: 0 }}>Muscle mass</p><p className="stat">{lm ? `${n1(lm.muscle_mass_kg)} kg` : '—'}</p><Delta rows={bm} k="muscle_mass_kg" unit=" kg" good="up" /></section>
+        <section className="card tile"><p className="muted" style={{ margin: 0 }}>BMI</p><p className="stat">{lb ? n1(lb.bmi) : '—'}</p><Delta rows={bm} k="bmi" unit="" good={null} /></section>
       </div>
 
+      <section className="card" id="body">
+        <div className="card-head"><h2>Body composition</h2><span className="muted" style={{ fontSize: 13 }}>Hover a point for the value and phase</span></div>
+        <div className="chart-grid">
+          <div><h3 className="chart-title">Weight</h3><LineChart points={series('weight_kg')} unit=" kg" decimals={1} color="#C9A15F" label="Weight" /></div>
+          <div><h3 className="chart-title">Body fat</h3><LineChart points={series('body_fat_pct')} unit="%" decimals={1} color="#E8A07A" label="Body fat" /></div>
+          <div><h3 className="chart-title">Skeletal muscle mass</h3><LineChart points={series('muscle_mass_kg')} unit=" kg" decimals={1} color="#4FC98A" label="Muscle mass" /></div>
+          <div><h3 className="chart-title">BMI</h3><LineChart points={series('bmi')} unit="" decimals={1} color="#8FB3E8" label="BMI" /></div>
+        </div>
+        {lastScan && (
+          <p className="muted" style={{ margin: '14px 0 0', fontSize: 13 }}>
+            Last InBody scan {fmtDate(lastScan.date)}: score {lastScan.details.inbody_score ?? '—'}/100 · body fat mass {n1(lastScan.fat_mass_kg)} kg · visceral fat level {lastScan.details.visceral_fat_level ?? '—'} · BMR {lastScan.details.bmr_kcal ?? '—'} kcal
+          </p>
+        )}
+        <details className="fold add-fold" style={{ marginTop: 16 }}>
+          <summary><span className="fold-plus" aria-hidden="true">+</span><span style={{ flex: 1, fontWeight: 600 }}>Log a weigh-in or scan</span></summary>
+          <form action={addBodyMetric} className="grid2 fold-body" style={{ alignItems: 'end' }}>
+            <label>Date<input type="date" name="date" defaultValue={today} /></label>
+            <label>Weight (kg)<input name="weight_kg" inputMode="decimal" /></label>
+            <label>Body fat (%)<input name="body_fat_pct" inputMode="decimal" placeholder="Optional" /></label>
+            <label>Skeletal muscle mass (kg)<input name="muscle_mass_kg" inputMode="decimal" placeholder="Optional" /></label>
+            <label>Phase<select name="phase" defaultValue={plan.phase || ''}><option value="">—</option><option value="bulking">Bulking</option><option value="cutting">Cutting</option><option value="maintenance">Maintenance</option></select></label>
+            <label>Type<select name="source" defaultValue="scale"><option value="scale">Scale</option><option value="inbody">InBody scan</option></select></label>
+            <label style={{ gridColumn: '1 / -1' }}>Note (optional)<input name="note" /></label>
+            <button className="btn" type="submit">Save</button>
+            <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>BMI is calculated from your height ({plan.height_cm || '—'} cm).</span>
+          </form>
+        </details>
+        {bm.length > 0 && (
+          <details className="fold" style={{ marginTop: 8 }}>
+            <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>All weigh-ins and scans ({bm.length})</span></summary>
+            <div className="scroll fold-body"><table>
+              <thead><tr><th>Date</th><th className="num">Weight</th><th className="num">Body fat</th><th className="num">Muscle</th><th className="num">BMI</th><th>Phase</th><th></th></tr></thead>
+              <tbody>{[...bm].reverse().map((r) => (
+                <tr key={r.id}>
+                  <td>{fmtDate(r.date)}{r.source === 'inbody' ? <span className="tag" style={{ marginLeft: 6 }}>InBody</span> : null}{r.note ? <div className="muted" style={{ fontSize: 12 }}>{r.note}</div> : null}</td>
+                  <td className="num">{r.weight_kg ? `${n1(r.weight_kg, 2)} kg` : '—'}</td>
+                  <td className="num">{r.body_fat_pct ? `${n1(r.body_fat_pct)}%` : '—'}</td>
+                  <td className="num">{r.muscle_mass_kg ? `${n1(r.muscle_mass_kg)} kg` : '—'}</td>
+                  <td className="num">{n1(r.bmi)}</td>
+                  <td className="muted">{r.phase ? PHASE_LABEL[r.phase] : '—'}</td>
+                  <td className="row-actions"><Remove table="body_metrics" id={r.id} anchor="body" /></td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          </details>
+        )}
+      </section>
+
       <section className="card" id="training">
-        <div className="card-head"><h2>Training progress</h2><span className="muted">Latest session vs two weeks earlier</span></div>
-        {exercises.length === 0 ? <p className="empty">No workouts logged yet.</p> : (
+        <div className="card-head"><h2>Training</h2><span className="muted" style={{ fontSize: 13 }}>Today: <strong style={{ color: 'var(--ink)' }}>{todaySession || '—'}</strong></span></div>
+        {Object.keys(split).length > 0 && (
+          <div className="split-row">
+            {DAYS.map(([d, l]) => (
+              <div key={d} className={`split-day${d === weekday ? ' today' : ''}${/rest/i.test(split[String(d)] || '') ? ' rest' : ''}`}>
+                <span className="muted" style={{ fontSize: 11 }}>{l}</span>
+                <strong>{split[String(d)] || '—'}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="muted" style={{ margin: '10px 0 16px', fontSize: 13 }}>Abs on push and pull days. Cardio: {plan.cardio || '—'}</p>
+        <h3 style={{ margin: '0 0 8px' }}>Progress per exercise</h3>
+        {exercises.length === 0 ? <p className="empty">No workouts logged yet. Each exercise will show its latest session against two weeks earlier.</p> : (
           <div className="scroll"><table>
             <thead><tr><th>Exercise</th><th>Latest</th><th>Two weeks earlier</th><th>Progress</th></tr></thead>
             <tbody>
@@ -108,12 +177,12 @@ export default async function Health() {
             </tbody>
           </table></div>
         )}
-        <details style={{ marginTop: 16 }}>
-          <summary className="btn ghost small">Log a workout</summary>
-          <form action={addWorkouts} style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+        <details className="fold add-fold" style={{ marginTop: 16 }}>
+          <summary><span className="fold-plus" aria-hidden="true">+</span><span style={{ flex: 1, fontWeight: 600 }}>Log a workout</span></summary>
+          <form action={addWorkouts} className="fold-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <label style={{ maxWidth: 220 }}>Date<input type="date" name="date" defaultValue={today} /></label>
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="grid2" style={{ gridTemplateColumns: 'minmax(180px, 3fr) repeat(3, minmax(80px, 1fr)) minmax(140px, 2fr)' }}>
+            {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+              <div key={i} className="grid2" style={{ gridTemplateColumns: 'minmax(180px, 3fr) repeat(3, minmax(70px, 1fr)) minmax(120px, 2fr)' }}>
                 <input name={`exercise_${i}`} placeholder={i === 0 ? 'Bench press' : 'Exercise'} aria-label={`Exercise ${i + 1}`} />
                 <input name={`sets_${i}`} inputMode="numeric" placeholder="Sets" aria-label={`Sets ${i + 1}`} />
                 <input name={`reps_${i}`} inputMode="numeric" placeholder="Reps" aria-label={`Reps ${i + 1}`} />
@@ -125,11 +194,11 @@ export default async function Health() {
           </form>
         </details>
         {wo.length > 0 && (
-          <details style={{ marginTop: 12 }}>
-            <summary className="linkbtn">All logged sets ({wo.length})</summary>
-            <div className="scroll" style={{ marginTop: 8 }}><table>
-              <tbody>{[...wo].reverse().slice(0, 60).map((r) => (
-                <tr key={r.id}><td className="muted">{fmtDate(r.date)}</td><td>{r.exercise}</td><td>{r.sets ? `${r.sets} × ` : ''}{r.reps ?? '—'} @ {n1(r.weight_kg)} kg</td><td><Remove table="workout_entries" id={r.id} anchor="training" /></td></tr>
+          <details className="fold" style={{ marginTop: 8 }}>
+            <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>All logged sets ({wo.length})</span></summary>
+            <div className="scroll fold-body"><table>
+              <tbody>{[...wo].reverse().slice(0, 80).map((r) => (
+                <tr key={r.id}><td className="muted">{fmtDate(r.date)}</td><td>{r.exercise}</td><td>{r.sets ? `${r.sets} × ` : ''}{r.reps ?? '—'} @ {n1(r.weight_kg)} kg</td><td className="row-actions"><Remove table="workout_entries" id={r.id} anchor="training" /></td></tr>
               ))}</tbody>
             </table></div>
           </details>
@@ -137,32 +206,36 @@ export default async function Health() {
       </section>
 
       <div className="row">
-        <section className="card wide" id="body">
-          <div className="card-head"><h2>Weight &amp; body fat</h2></div>
-          {recentBm.length === 0 ? <p className="empty">No weigh-ins yet.</p> : (
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 140, marginBottom: 12 }}>
-              {recentBm.map((r) => (
-                <div key={r.id} style={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }} title={`${fmtDate(r.date)}: ${n1(r.weight_kg)} kg${r.body_fat_pct ? `, ${n1(r.body_fat_pct)}%` : ''}`}>
-                  <span style={{ fontSize: 11 }} className="muted">{r.weight_kg ? n1(r.weight_kg) : ''}</span>
-                  <div style={{ width: '100%', height: r.weight_kg ? Math.max(8, Math.round(((Number(r.weight_kg) - minW * 0.97) / (maxW - minW * 0.97)) * 100)) : 4, borderRadius: 6, background: r.id === recentBm[recentBm.length - 1].id ? 'var(--gold-grad)' : 'var(--surface-sunken)' }} />
-                  <span className="muted" style={{ fontSize: 11 }}>{fmtDate(r.date).split(' ').slice(0, 2).join(' ')}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <form action={addBodyMetric} className="grid2" style={{ alignItems: 'end' }}>
-            <label>Date<input type="date" name="date" defaultValue={today} /></label>
-            <label>Weight (kg)<input name="weight_kg" inputMode="decimal" /></label>
-            <label>Body fat (%)<input name="body_fat_pct" inputMode="decimal" /></label>
-            <label>Muscle mass (kg)<input name="muscle_mass_kg" inputMode="decimal" /></label>
-            <button className="btn" type="submit">Save weigh-in</button>
-          </form>
-          {bm.length > 0 && (
-            <details style={{ marginTop: 12 }}>
-              <summary className="linkbtn">All weigh-ins ({bm.length})</summary>
-              <div className="scroll" style={{ marginTop: 8 }}><table><tbody>{[...bm].reverse().map((r) => (
-                <tr key={r.id}><td className="muted">{fmtDate(r.date)}</td><td>{n1(r.weight_kg)} kg</td><td>{n1(r.body_fat_pct)}%</td><td>{n1(r.muscle_mass_kg)} kg</td><td><Remove table="body_metrics" id={r.id} anchor="body" /></td></tr>
-              ))}</tbody></table></div>
+        <section className="card wide" id="nutrition">
+          <div className="card-head"><h2>Nutrition</h2><span className="muted" style={{ fontSize: 13 }}>Today is a {DAY_TYPE[todayType].toLowerCase()}{target[todayType] ? ` · target ${target[todayType]} kcal` : ''}</span></div>
+          <div className="kcal-row">
+            {['training', 'rest', 'off'].map((t) => (
+              <div key={t} className={`kcal-box${t === todayType ? ' today' : ''}`}><span className="muted" style={{ fontSize: 12 }}>{DAY_TYPE[t]}</span><strong>{target[t] ? `${target[t]} kcal` : '—'}</strong></div>
+            ))}
+          </div>
+          {nutPoints.length > 0 ? (
+            <>
+              <h3 className="chart-title" style={{ marginTop: 16 }}>Calories logged</h3>
+              <LineChart points={nutPoints} unit=" kcal" decimals={0} color="#C9A15F" label="Calories" />
+              <p className="muted" style={{ margin: '8px 0 0', fontSize: 13 }}>Last 7 days: {nut7.length} day{nut7.length === 1 ? '' : 's'} logged, {onTarget} within 10% of target.</p>
+            </>
+          ) : <p className="muted" style={{ margin: '14px 0 0', fontSize: 13 }}>Log a day's total calories below to start comparing with your targets. Optional; one number a day is enough.</p>}
+          <details className="fold add-fold" style={{ marginTop: 16 }} open={false}>
+            <summary><span className="fold-plus" aria-hidden="true">+</span><span style={{ flex: 1, fontWeight: 600 }}>{nutToday ? `Today logged: ${nutToday.calories ?? '—'} kcal · edit` : 'Log calories'}</span></summary>
+            <form action={logNutrition} className="grid2 fold-body" style={{ alignItems: 'end' }}>
+              <label>Date<input type="date" name="date" defaultValue={today} /></label>
+              <label>Day type<select name="day_type" defaultValue={nutToday?.day_type || todayType}><option value="training">Training day</option><option value="rest">Rest day</option><option value="off">Off day</option></select></label>
+              <label>Total calories<input name="calories" inputMode="numeric" defaultValue={nutToday?.calories ?? ''} placeholder={target[todayType] ? String(target[todayType]) : ''} /></label>
+              <label>Note (optional)<input name="note" defaultValue={nutToday?.note ?? ''} placeholder="e.g. dinner out, extra rice" /></label>
+              <button className="btn" type="submit">Save</button>
+            </form>
+          </details>
+          {Array.isArray(plan.meals) && plan.meals.length > 0 && (
+            <details className="fold" style={{ marginTop: 8 }}>
+              <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Meal plan</span></summary>
+              <div className="fold-body list">
+                {plan.meals.map((m) => <div key={m.name}><strong>{m.name}</strong><div className="muted">{m.items}</div></div>)}
+              </div>
             </details>
           )}
         </section>
@@ -170,14 +243,14 @@ export default async function Health() {
         <section className="card narrow" id="daily">
           <div className="card-head"><h2>Daily health</h2><span className="muted">7-day average</span></div>
           <div className="list">
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Steps</span><strong>{avg('steps') ? Math.round(avg('steps')).toLocaleString('en-GB') : '—'}</strong></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Steps</span><strong>{avg('steps') ? Math.round(avg('steps')).toLocaleString('en-GB') : '—'}{plan.steps_goal ? <span className="muted" style={{ fontWeight: 400 }}> / {Number(plan.steps_goal).toLocaleString('en-GB')} goal</span> : null}</strong></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Active calories</span><strong>{avg('active_kcal') ? `${Math.round(avg('active_kcal'))} kcal` : '—'}</strong></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sleep</span><strong>{sleep ? `${Math.floor(sleep / 60)} h ${String(Math.round(sleep % 60)).padStart(2, '0')}` : '—'}</strong></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Resting heart rate</span><strong>{avg('resting_hr') ? `${Math.round(avg('resting_hr'))} bpm` : '—'}</strong></div>
           </div>
-          <details style={{ marginTop: 14 }}>
-            <summary className="btn ghost small">Log a day</summary>
-            <form action={addDaily} style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+          <details className="fold add-fold" style={{ marginTop: 14 }}>
+            <summary><span className="fold-plus" aria-hidden="true">+</span><span style={{ flex: 1, fontWeight: 600 }}>Log a day</span></summary>
+            <form action={addDaily} className="fold-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <label>Date<input type="date" name="date" defaultValue={today} /></label>
               <div className="grid2">
                 <label>Steps<input name="steps" inputMode="numeric" /></label>
@@ -190,6 +263,22 @@ export default async function Health() {
           </details>
         </section>
       </div>
+
+      <section className="card" id="plan">
+        <details className="block-fold">
+          <summary><span className="fold-chev" aria-hidden="true">▸</span><h2 style={{ flex: 1 }}>My plan</h2><span className="muted" style={{ fontSize: 13 }}>{plan.phase ? PHASE_LABEL[plan.phase] : 'No phase set'} · {plan.height_cm ? `${plan.height_cm} cm` : 'height not set'}</span></summary>
+          <form action={savePlan} className="grid2 block-body" style={{ alignItems: 'end' }}>
+            <label>Current phase<select name="phase" defaultValue={plan.phase || ''}><option value="">—</option><option value="bulking">Bulking</option><option value="cutting">Cutting</option><option value="maintenance">Maintenance</option></select></label>
+            <label>Height (cm)<input name="height_cm" inputMode="decimal" defaultValue={plan.height_cm ?? ''} /></label>
+            <label>Training day kcal<input name="kcal_training" inputMode="numeric" defaultValue={plan.kcal_training ?? ''} /></label>
+            <label>Rest day kcal<input name="kcal_rest" inputMode="numeric" defaultValue={plan.kcal_rest ?? ''} /></label>
+            <label>Off day kcal<input name="kcal_off" inputMode="numeric" defaultValue={plan.kcal_off ?? ''} /></label>
+            <label>Steps goal<input name="steps_goal" inputMode="numeric" defaultValue={plan.steps_goal ?? ''} /></label>
+            <button className="btn" type="submit">Save plan</button>
+            <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Training split and meal plan: ask Claude in chat to change them.</span>
+          </form>
+        </details>
+      </section>
     </>
   );
 }
