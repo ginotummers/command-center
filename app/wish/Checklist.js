@@ -18,7 +18,6 @@ function Item({ item, checked, onToggle, pending }) {
         {item.note ? <span className="wish-note">{item.note}</span> : null}
       </label>
       {item.link === 'board' && <a className="wish-jump" href="/wish?tab=dreams#board">Vision Board →</a>}
-      {item.link === 'dreambook' && <a className="wish-jump" href="/wish?tab=dreams#dreambook">Dream Book →</a>}
     </li>
   );
 }

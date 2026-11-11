@@ -85,87 +85,77 @@ async function removeFiles(supabase, paths) {
   if (list.length) await supabase.storage.from('wish').remove(list);
 }
 
-export async function saveDream(fd) {
-  const { supabase } = await client();
-  const id = str(fd.get('id'));
-  const body = str(fd.get('body'));
-  if (!body) redirect(`/wish?tab=dreams${id ? `&edit=${id}` : ''}&error=empty#dreambook`);
-  const values = { entry_date: isDate(fd.get('entry_date')) ? fd.get('entry_date') : dubaiNow().date, title: str(fd.get('title')), body, updated_at: new Date().toISOString() };
-  const img = str(fd.get('image_path'));
-  let oldImage = null;
-  if (id) {
-    const { data } = await supabase.from('dream_entries').select('image_path').eq('id', id).single();
-    oldImage = data?.image_path || null;
-  }
-  if (img) values.image_path = img;
-  if (fd.get('remove_image') === 'on') values.image_path = null;
-  const { error } = id ? await supabase.from('dream_entries').update(values).eq('id', id) : await supabase.from('dream_entries').insert(values);
+// ---- Vision Board canvas ----
+const BOARD_W = 1600, BOARD_H = 1000;
+const num = (v, lo, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null; };
+
+async function signed(supabase, rows) {
+  if (!rows.length) return [];
+  const { data } = await supabase.storage.from('wish').createSignedUrls(rows.map((r) => r.image_path), 3600);
+  const map = Object.fromEntries((data || []).map((d) => [d.path, d.signedUrl]));
+  return rows.map((r) => ({ id: r.id, url: map[r.image_path], x: r.x, y: r.y, w: r.w, rot: r.rot, z: r.z, is_chief: r.is_chief, title: r.title }));
+}
+
+// New photos are placed in a ring around the title, slightly tilted like pinned prints
+export async function addVisionImages(paths, existing = 0) {
+  const { supabase, user } = await client();
+  const list = (paths || []).filter((p) => typeof p === 'string' && p.startsWith(`${user.id}/`)).slice(0, 30);
+  if (!list.length) return [];
+  const { data: top } = await supabase.from('vision_items').select('z').order('z', { ascending: false }).limit(1);
+  let z = (top?.[0]?.z ?? 0) + 1;
+  const rows = list.map((image_path, i) => {
+    const k = Number(existing) + i;
+    const a = (k * 2 * Math.PI) / 8 + (Math.floor(k / 8) * Math.PI) / 8 - Math.PI / 2;
+    const w = 230;
+    const rx = 540 - (Math.floor(k / 8) % 3) * 120, ry = 270 - (Math.floor(k / 8) % 3) * 60;
+    return {
+      image_path, w, z: z++, position: k,
+      x: Math.round(BOARD_W / 2 + rx * Math.cos(a) - w / 2),
+      y: Math.round(BOARD_H / 2 + ry * Math.sin(a) - w * 0.5),
+      rot: Math.round((Math.random() * 8 - 4) * 10) / 10,
+    };
+  });
+  const { data, error } = await supabase.from('vision_items').insert(rows).select('*');
   if (error) throw new Error(error.message);
-  if (oldImage && (img || fd.get('remove_image') === 'on') && oldImage !== img) await removeFiles(supabase, [oldImage]);
   revalidatePath('/wish');
-  redirect('/wish?tab=dreams&saved=dream#dreambook');
+  return signed(supabase, data || []);
 }
 
-export async function deleteDream(fd) {
+export async function updateVisionItem(id, p) {
   const { supabase } = await client();
-  const id = String(fd.get('id'));
-  const { data } = await supabase.from('dream_entries').select('image_path').eq('id', id).single();
-  const { error } = await supabase.from('dream_entries').delete().eq('id', id);
-  if (error) throw new Error(error.message);
-  await removeFiles(supabase, [data?.image_path]);
-  revalidatePath('/wish');
-  redirect('/wish?tab=dreams#dreambook');
-}
-
-export async function saveVision(fd) {
-  const { supabase } = await client();
-  const id = str(fd.get('id'));
-  const isChief = fd.get('is_chief') === 'on';
-  const values = { title: str(fd.get('title')), description: str(fd.get('description')), is_chief: isChief };
-  const img = str(fd.get('image_path'));
-  if (isChief) await supabase.from('vision_items').update({ is_chief: false }).eq('is_chief', true);
-  if (id) {
-    const { data: old } = await supabase.from('vision_items').select('image_path').eq('id', id).single();
-    if (img) values.image_path = img;
-    const { error } = await supabase.from('vision_items').update(values).eq('id', id);
-    if (error) throw new Error(error.message);
-    if (img && old?.image_path && old.image_path !== img) await removeFiles(supabase, [old.image_path]);
-  } else {
-    if (!img) redirect('/wish?tab=dreams&error=image#board');
-    const { data: last } = await supabase.from('vision_items').select('position').order('position', { ascending: false }).limit(1);
-    const { error } = await supabase.from('vision_items').insert({ ...values, image_path: img, position: (last?.[0]?.position ?? -1) + 1 });
-    if (error) throw new Error(error.message);
+  const values = {};
+  if (p.x !== undefined) values.x = num(p.x, -400, BOARD_W);
+  if (p.y !== undefined) values.y = num(p.y, -400, BOARD_H);
+  if (p.w !== undefined) values.w = num(p.w, 60, 1000);
+  if (p.rot !== undefined) values.rot = num(p.rot, -360, 360);
+  if (p.z !== undefined) values.z = Math.round(num(p.z, -100000, 100000) ?? 0);
+  if (p.is_chief !== undefined) {
+    values.is_chief = !!p.is_chief;
+    if (values.is_chief) await supabase.from('vision_items').update({ is_chief: false }).eq('is_chief', true).neq('id', id);
   }
-  revalidatePath('/wish'); revalidatePath('/');
-  redirect('/wish?tab=dreams&saved=vision#board');
+  Object.keys(values).forEach((k) => values[k] === null && delete values[k]);
+  if (!Object.keys(values).length) return { ok: true };
+  const { error } = await supabase.from('vision_items').update(values).eq('id', id);
+  if (error) throw new Error(error.message);
+  return { ok: true };
 }
 
-export async function deleteVision(fd) {
+export async function removeVisionItem(id) {
   const { supabase } = await client();
-  const id = String(fd.get('id'));
   const { data } = await supabase.from('vision_items').select('image_path').eq('id', id).single();
   const { error } = await supabase.from('vision_items').delete().eq('id', id);
   if (error) throw new Error(error.message);
   await removeFiles(supabase, [data?.image_path]);
   revalidatePath('/wish');
-  redirect('/wish?tab=dreams#board');
+  return { ok: true };
 }
 
-// Swap an image with its neighbour to reorder the board
-export async function moveVision(fd) {
+export async function saveBoardTitle(t) {
   const { supabase } = await client();
-  const id = String(fd.get('id'));
-  const dir = fd.get('dir') === 'left' ? -1 : 1;
-  const { data: items } = await supabase.from('vision_items').select('id,position').order('position').order('created_at');
-  const list = items || [];
-  const i = list.findIndex((x) => x.id === id);
-  const j = i + dir;
-  if (i >= 0 && j >= 0 && j < list.length) {
-    // normalise positions to the current order, then swap the two
-    const order = list.map((x) => x.id);
-    [order[i], order[j]] = [order[j], order[i]];
-    await Promise.all(order.map((vid, pos) => supabase.from('vision_items').update({ position: pos }).eq('id', vid)));
-  }
-  revalidatePath('/wish');
-  redirect('/wish?tab=dreams#board');
+  await upsertSettings(supabase, {
+    board_title: String(t?.text || 'Vision Board').slice(0, 80),
+    board_title_x: num(t?.x, 0, BOARD_W) ?? 800,
+    board_title_y: num(t?.y, 0, BOARD_H) ?? 500,
+  });
+  return { ok: true };
 }

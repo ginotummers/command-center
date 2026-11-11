@@ -4,8 +4,8 @@ import { SECTIONS, DAILY, WEEKLY, TEACHINGS, teachingFor, DEFAULT_SETTINGS, WEEK
 import Checklist from './Checklist';
 import ImageInput from './ImageInput';
 import PdfReader from './PdfReader';
-import ImmersiveBoard from './ImmersiveBoard';
-import { saveChiefAim, saveSettings, saveDream, deleteDream, saveVision, deleteVision, moveVision } from './actions';
+import VisionCanvas from './VisionCanvas';
+import { saveChiefAim, saveSettings } from './actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +13,7 @@ const TABS = [
   ['overview', 'Overview'],
   ['daily', 'Daily Practices'],
   ['weekly', 'Weekly Practices'],
-  ['dreams', 'Dream Book & Vision Board'],
+  ['dreams', 'Vision Board'],
   ['reference', 'Master Reference'],
 ];
 
@@ -39,11 +39,10 @@ export default async function WishPage({ searchParams }) {
   const { day, week, weekEnd } = periods(now.date);
   const histFrom = addDays(day, -13);
 
-  const [{ data: settingsRow, error: settingsErr }, { data: checks }, { data: dreams }, { data: vision }, { data: files }] = await Promise.all([
+  const [{ data: settingsRow, error: settingsErr }, { data: checks }, { data: vision }, { data: files }] = await Promise.all([
     supabase.from('wish_settings').select('*').maybeSingle(),
     supabase.from('wish_checks').select('period_type,period_start,item_id').or(`and(period_type.eq.day,period_start.gte.${histFrom}),and(period_type.eq.week,period_start.gte.${addDays(week, -35)})`),
-    supabase.from('dream_entries').select('*').order('entry_date', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('vision_items').select('*').order('position').order('created_at'),
+    supabase.from('vision_items').select('*').order('z').order('created_at'),
     supabase.storage.from('wish').list(user.id, { search: 'master-reference.pdf' }),
   ]);
   const s = { ...DEFAULT_SETTINGS, ...(settingsRow || {}) };
@@ -62,7 +61,7 @@ export default async function WishPage({ searchParams }) {
   };
 
   // Signed links for private images and the PDF (valid one hour)
-  const imgPaths = [s.chief_image_path, ...(dreams || []).map((d) => d.image_path), ...(vision || []).map((v) => v.image_path)].filter(Boolean);
+  const imgPaths = [s.chief_image_path, ...(vision || []).map((v) => v.image_path)].filter(Boolean);
   const signed = {};
   if (imgPaths.length) {
     const { data } = await supabase.storage.from('wish').createSignedUrls(imgPaths, 3600);
@@ -81,8 +80,6 @@ export default async function WishPage({ searchParams }) {
 
   const teaching = teachingFor(day);
   const editAim = sp.edit === 'aim' || !s.chief_aim;
-  const editDream = sp.edit ? (dreams || []).find((d) => d.id === sp.edit) : null;
-  const editVision = sp.vedit ? (vision || []).find((v) => v.id === sp.vedit) : null;
   const inMorning = now.minutes < 12 * 60;
   const [eh, em] = s.evening_start.split(':').map(Number);
   const inEvening = now.minutes >= eh * 60 + em - 60;
@@ -235,77 +232,17 @@ export default async function WishPage({ searchParams }) {
       )}
 
       {tab === 'dreams' && (
-        <>
-          <section className="card" id="board">
-            <div className="card-head"><h2>Vision Board</h2><ImmersiveBoard items={(vision || []).filter((v) => signed[v.image_path]).map((v) => ({ id: v.id, url: signed[v.image_path], title: v.title, is_chief: v.is_chief }))} /></div>
-            {sp.error === 'image' && <p className="neg" role="alert">Choose an image first.</p>}
-            {(vision || []).length === 0 ? <p className="empty">No images yet. Add photos of what you desire below.</p> : (
-              <div className="vision-grid">
-                {(vision || []).map((v, i) => (
-                  <figure key={v.id} className={`vision-card${v.is_chief ? ' chief' : ''}`}>
-                    {signed[v.image_path] ? <img src={signed[v.image_path]} alt={v.title || 'Vision Board image'} /> : <div className="empty">Image unavailable</div>}
-                    <figcaption>
-                      {v.is_chief && <span className="tag" style={{ background: 'var(--gold-grad)', color: 'var(--on-gold)' }}>Chief Aim</span>}
-                      {v.title && <strong>{v.title}</strong>}
-                      {v.description && <span className="muted" style={{ fontSize: 13 }}>{v.description}</span>}
-                      <span className="vision-tools">
-                        <form action={moveVision}><input type="hidden" name="id" value={v.id} /><input type="hidden" name="dir" value="left" /><button className="linkbtn" type="submit" disabled={i === 0} aria-label="Move earlier">←</button></form>
-                        <form action={moveVision}><input type="hidden" name="id" value={v.id} /><input type="hidden" name="dir" value="right" /><button className="linkbtn" type="submit" disabled={i === vision.length - 1} aria-label="Move later">→</button></form>
-                        <a className="linkbtn" href={`/wish?tab=dreams&vedit=${v.id}#vision-form`}>Edit</a>
-                        <form action={deleteVision}><input type="hidden" name="id" value={v.id} /><button className="linkbtn" type="submit">Remove</button></form>
-                      </span>
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-            )}
-            <details id="vision-form" open={!!editVision || (vision || []).length === 0} style={{ marginTop: 18 }}>
-              <summary className="btn ghost small" style={{ width: 'fit-content' }}>{editVision ? 'Edit image' : '+ Add image'}</summary>
-              <form action={saveVision} className="stack" style={{ marginTop: 14, maxWidth: 560 }}>
-                {editVision && <input type="hidden" name="id" value={editVision.id} />}
-                <ImageInput userId={user.id} label={editVision ? 'Replace image (optional)' : 'Image'} currentUrl={editVision ? signed[editVision.image_path] : null} required={!editVision} />
-                <label>Title (optional)<input name="title" defaultValue={editVision?.title || ''} /></label>
-                <label>Description (optional)<textarea name="description" defaultValue={editVision?.description || ''} style={{ minHeight: 60 }} /></label>
-                <label className="check"><input type="checkbox" name="is_chief" defaultChecked={!!editVision?.is_chief} /> This image represents my Chief Aim</label>
-                <div style={{ display: 'flex', gap: 10 }}><button className="btn" type="submit">{editVision ? 'Save' : 'Add to board'}</button>{editVision && <a className="btn ghost" href="/wish?tab=dreams#board">Cancel</a>}</div>
-              </form>
-            </details>
-          </section>
-
-          <section className="card" id="dreambook">
-            <div className="card-head"><h2>Dream Book</h2><span className="muted" style={{ fontSize: 13 }}>{(dreams || []).length} entr{(dreams || []).length === 1 ? 'y' : 'ies'}</span></div>
-            <p className="hint" style={{ margin: '0 0 16px' }}>The book teaches writing your desires by hand on white paper in blue ink. This digital Dream Book is a convenience for reviewing; it is not the same exercise.</p>
-            {sp.error === 'empty' && <p className="neg" role="alert">Write something before saving.</p>}
-            <form action={saveDream} className="stack" style={{ maxWidth: 720 }}>
-              {editDream && <input type="hidden" name="id" value={editDream.id} />}
-              <div className="grid2">
-                <label>Date<input type="date" name="entry_date" defaultValue={editDream?.entry_date || day} /></label>
-                <label>Title (optional)<input name="title" defaultValue={editDream?.title || ''} /></label>
-              </div>
-              <label>{editDream ? 'Edit entry' : 'New entry'}<textarea name="body" defaultValue={editDream?.body || ''} placeholder="What I desire, and how it feels to have it" style={{ minHeight: 120 }} required /></label>
-              <ImageInput userId={user.id} label="Image (optional)" currentUrl={editDream?.image_path ? signed[editDream.image_path] : null} />
-              {editDream?.image_path && <label className="check"><input type="checkbox" name="remove_image" /> Remove current image</label>}
-              <div style={{ display: 'flex', gap: 10 }}><button className="btn" type="submit">{editDream ? 'Save changes' : 'Save entry'}</button>{editDream && <a className="btn ghost" href="/wish?tab=dreams#dreambook">Cancel</a>}</div>
-            </form>
-            <div className="dream-list">
-              {(dreams || []).length === 0 && <p className="empty">Your first entry will appear here.</p>}
-              {(dreams || []).map((d) => (
-                <article key={d.id} className="dream-entry">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                    <span className="overline">{fmtDate(d.entry_date)}</span>
-                    <span style={{ display: 'flex', gap: 6 }}>
-                      <a className="linkbtn" href={`/wish?tab=dreams&edit=${d.id}#dreambook`}>Edit</a>
-                      <form action={deleteDream}><input type="hidden" name="id" value={d.id} /><button className="linkbtn" type="submit">Delete</button></form>
-                    </span>
-                  </div>
-                  {d.title && <h3 style={{ marginTop: 4 }}>{d.title}</h3>}
-                  <p style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{d.body}</p>
-                  {d.image_path && signed[d.image_path] && <img src={signed[d.image_path]} alt={d.title || 'Dream Book image'} className="dream-img" />}
-                </article>
-              ))}
-            </div>
-          </section>
-        </>
+        <section className="card" id="board">
+          <div className="card-head"><h2>Vision Board</h2><span className="muted" style={{ fontSize: 13 }}>A digital copy of your physical board</span></div>
+          <VisionCanvas
+            userId={user.id}
+            initialTitle={{ text: s.board_title || 'Vision Board', x: s.board_title_x ?? 800, y: s.board_title_y ?? 500 }}
+            initialItems={(vision || []).filter((v) => signed[v.image_path]).map((v, i) => ({
+              id: v.id, url: signed[v.image_path], title: v.title, is_chief: v.is_chief,
+              x: v.x ?? 80 + (i % 5) * 300, y: v.y ?? 60 + Math.floor(i / 5) * 280, w: v.w || 250, rot: v.rot || 0, z: v.z || 0,
+            }))}
+          />
+        </section>
       )}
 
       {tab === 'reference' && (

@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { browserClient } from '@/lib/supabase-browser';
 
 // Shrinks a photo to at most 1800px on its long side as JPEG, so phone photos upload quickly
-async function shrink(file) {
+export async function shrink(file) {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
   try {
     const bmp = await createImageBitmap(file);
