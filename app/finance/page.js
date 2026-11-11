@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase';
 import { eur, pct, monthStart, shiftMonth, monthLabel, todayIso, lastDayOfMonth } from '@/lib/util';
 import { NW_TYPES, assets, netWorthAsOf } from '@/lib/networth';
+import LineChart from '../components/LineChart';
 import { addIncome, updateIncome, addExpense, updateExpense, addNetWorth, updateNetWorth, removeRow, copyFromPrevious } from './actions';
 
 export const metadata = { title: 'Finance · Personal Operating Center' };
@@ -58,12 +59,15 @@ export default async function Money({ searchParams }) {
   const prev = shiftMonth(month, -1);
   const monthEnd = lastDayOfMonth(month);
   const supabase = await createClient();
-  const [{ data: income }, { data: expenses }, { data: nwAll }, { data: settings }, { data: prevExp }] = await Promise.all([
+  const from12 = shiftMonth(month, -11);
+  const [{ data: income }, { data: expenses }, { data: nwAll }, { data: settings }, { data: prevExp }, { data: inc12 }, { data: exp12 }] = await Promise.all([
     supabase.from('income').select('*').eq('month', month).order('created_at'),
     supabase.from('expenses').select('*').eq('month', month).order('created_at'),
     supabase.from('net_worth_items').select('*').order('entered_on').order('created_at'),
     supabase.from('settings').select('expense_categories').maybeSingle(),
     supabase.from('expenses').select('amount').eq('month', prev),
+    supabase.from('income').select('month,amount').gte('month', from12).lte('month', month),
+    supabase.from('expenses').select('month,amount').gte('month', from12).lte('month', month),
   ]);
 
   const expCats = [...new Set([...(settings?.expense_categories || EXPENSE_CATS), ...(expenses || []).map((e) => e.category).filter(Boolean)])];
@@ -77,10 +81,17 @@ export default async function Money({ searchParams }) {
   const assetList = assets(nwAll, monthEnd).sort((a, b) => Number(b.latest.value) - Number(a.latest.value));
   const nw = netWorthAsOf(nwAll, monthEnd);
   const nwPrev = netWorthAsOf(nwAll, lastDayOfMonth(prev));
-  const firstMonth = (nwAll || []).length ? `${(nwAll[0].entered_on || nwAll[0].month).slice(0, 7)}-01` : null;
-  const history = [];
-  if (firstMonth) for (let m = month, i = 0; m >= firstMonth && i < 12; m = shiftMonth(m, -1), i++) history.unshift({ m, v: netWorthAsOf(nwAll, lastDayOfMonth(m)) });
-  const maxV = Math.max(1, ...history.map((h) => Math.abs(h.v || 0)));
+  // Chart windows: at least 6 months, up to 12, ending at the viewed month
+  const chartWindow = (first) => { const out = []; let m = month; for (let i = 0; i < 12; i++) { out.unshift(m); if (i >= 5 && (!first || m <= first)) break; m = shiftMonth(m, -1); } return out; };
+  const pt = (m, value) => ({ label: monthLabel(m), short: monthLabel(m).slice(0, 3), value });
+  const firstNw = (nwAll || []).length ? `${(nwAll[0].entered_on || nwAll[0].month).slice(0, 7)}-01` : null;
+  const nwPoints = chartWindow(firstNw).map((m) => pt(m, firstNw && m >= firstNw ? netWorthAsOf(nwAll, lastDayOfMonth(m)) : null));
+  const monthly = (rows) => { const t = {}; (rows || []).forEach((r) => { t[r.month] = (t[r.month] || 0) + Number(r.amount || 0); }); return t; };
+  const incM = monthly(inc12); const expM = monthly(exp12);
+  const firstFlow = [...Object.keys(incM), ...Object.keys(expM)].sort()[0] || null;
+  const flowMonths = chartWindow(firstFlow);
+  const incPoints = flowMonths.map((m) => pt(m, incM[m] ?? null));
+  const expPoints = flowMonths.map((m) => pt(m, expM[m] ?? null));
 
   const totalIncome = sum(income, 'amount');
   const totalExpenses = sum(expenses, 'amount');
@@ -243,17 +254,8 @@ export default async function Money({ searchParams }) {
         </section>
         <section className="card narrow">
           <h2 style={{ marginBottom: 4 }}>Net worth over time</h2>
-          <p className="muted" style={{ margin: '0 0 16px' }}>Balance at the end of each month</p>
-          {history.length === 0 ? <p className="empty">Appears once you add a value.</p> : (
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 150 }}>
-              {history.map((h) => (
-                <div key={h.m} style={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }} title={`${monthLabel(h.m)}: ${eur(h.v)}`}>
-                  <div style={{ width: '100%', height: Math.max(4, Math.round((Math.abs(h.v || 0) / maxV) * 120)), borderRadius: 6, background: h.m === month ? 'var(--gold-grad)' : 'var(--surface-sunken)' }} />
-                  <span className="muted" style={{ fontSize: 11 }}>{monthLabel(h.m).slice(0, 3)}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>Balance at the end of each month · hover for values</p>
+          <LineChart points={nwPoints} color="#C9A15F" label="Net worth" area />
         </section>
       </div>
 
@@ -326,6 +328,18 @@ export default async function Money({ searchParams }) {
               </form>
             </div>
           </details>
+        </section>
+      </div>
+      <div className="row">
+        <section className="card" style={{ flex: '1 1 420px' }}>
+          <h2 style={{ marginBottom: 4 }}>Income over time</h2>
+          <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>Total income per month</p>
+          <LineChart points={incPoints} color="#4FC98A" label="Income" />
+        </section>
+        <section className="card" style={{ flex: '1 1 420px' }}>
+          <h2 style={{ marginBottom: 4 }}>Expenses over time</h2>
+          <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>Total expenses per month</p>
+          <LineChart points={expPoints} color="#EF5B5B" label="Expenses" />
         </section>
       </div>
     </>

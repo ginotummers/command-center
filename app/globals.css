@@ -205,3 +205,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .add-form { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 4px; }
 .edit-cell { background: var(--surface-sunken); border-radius: 12px; padding: 12px !important; }
 .row-actions { white-space: nowrap; text-align: right; }
+
+/* Line charts */
+.lc-tip { position: absolute; transform: translate(-50%, calc(-100% - 14px)); pointer-events: none; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: #0E1838; border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,0.45); white-space: nowrap; font-size: 14px; z-index: 5; }
