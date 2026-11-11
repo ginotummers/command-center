@@ -1,4 +1,4 @@
-import { netWorthAsOf } from '@/lib/networth';
+import { accountStates, totals, planTarget, planBaseline } from '@/lib/finance';
 import { createClient } from '@/lib/supabase';
 import { progress } from '@/lib/goals';
 import { eur, pct, fmtDate, greeting, longToday, monthStart, shiftMonth, monthLabel, todayIso, weekStart, addDays, isoWeek, lastDayOfMonth } from '@/lib/util';
@@ -24,12 +24,15 @@ export default async function Home({ searchParams }) {
   const today = todayIso();
   const thisWeek = weekStart(today);
   const lastWeek = addDays(thisWeek, -7);
-  const [{ data: goalsData }, { data: nwData }, { data: inc }, { data: exp }, { data: refl }] = await Promise.all([
+  const [{ data: goalsData }, { data: accData }, { data: inc }, { data: exp }, { data: refl }, { data: balData }, { data: finData }, { data: oweData }] = await Promise.all([
     supabase.from('goals').select('*').eq('type', 'main').eq('archived', false).order('deadline', { ascending: true, nullsFirst: false }),
-    supabase.from('net_worth_items').select('month,kind,type,label,value,entered_on,created_at').order('entered_on'),
-    supabase.from('income').select('amount').eq('month', month),
-    supabase.from('expenses').select('amount').eq('month', month),
+    supabase.from('accounts').select('*').eq('scope', 'personal').eq('archived', false),
+    supabase.from('income').select('amount').eq('month', month).eq('scope', 'personal'),
+    supabase.from('expenses').select('amount').eq('month', month).eq('scope', 'personal'),
     supabase.from('reflections').select('id,type,status,period_start').gte('period_start', lastWeek).eq('type', 'weekly'),
+    supabase.from('balances').select('account_id,date,amount,invested,eur,invested_eur,created_at').order('date'),
+    supabase.from('finance_settings').select('*').maybeSingle(),
+    supabase.from('money_items').select('eur').eq('scope', 'personal').eq('direction', 'i_owe').eq('status', 'open'),
   ]);
   const tomorrow = addDays(today, 1);
   const [{ data: bm }, { data: evData }, { data: taskData }, { data: focusData }, { data: runData }, { data: wdData }] = await Promise.all([
@@ -86,13 +89,16 @@ export default async function Home({ searchParams }) {
   const minsTo = next ? Math.round((new Date(next.start_at) - Date.now()) / 60000) : null;
   const active = (goalsData || []).filter((g) => !DONE.includes(g.status));
 
-  const byMonth = {};
-  (nwData || []).forEach((r) => { (byMonth[r.month] = byMonth[r.month] || []).push(r); });
-  const months = Object.keys(byMonth).sort();
-  const latest = months[months.length - 1];
-  // latest value per asset (same logic as the Finance page)
-  const nw = netWorthAsOf(nwData, '9999-12-31');
-  const prevNw = netWorthAsOf(nwData, lastDayOfMonth(shiftMonth(month, -1)));
+  // Personal balance and spending power (same logic as the Finance page)
+  const persAcc = accData || []; const persBal = (balData || []).filter((b) => persAcc.some((a) => a.id === b.account_id));
+  const nowT = totals(accountStates(persAcc, persBal));
+  const nw = persBal.length ? nowT.basis : null;
+  const prevNw = persBal.some((b) => b.date <= lastDayOfMonth(shiftMonth(month, -1))) ? totals(accountStates(persAcc, persBal, lastDayOfMonth(shiftMonth(month, -1)))).basis : null;
+  const latest = persBal.length ? `${persBal[persBal.length - 1].date.slice(0, 7)}-01` : null;
+  const lastBalDate = persBal.length ? [...persBal].sort((a, b) => a.date.localeCompare(b.date))[persBal.length - 1].date : null;
+  const planT = planTarget(finData, month, planBaseline(finData, persAcc, persBal).value);
+  const spendPower = planT === null || nw === null ? null : nowT.basis - nowT.reserved - (oweData || []).reduce((a, r) => a + Number(r.eur), 0) - planT;
+  const isSunday = new Date(`${today}T00:00:00Z`).getUTCDay() === 0;
   const nwChange = nw !== null && prevNw ? ((nw - prevNw) / Math.abs(prevNw)) * 100 : null;
   const income = (inc || []).reduce((a, r) => a + Number(r.amount), 0);
   const expenses = (exp || []).reduce((a, r) => a + Number(r.amount), 0);
@@ -130,10 +136,16 @@ export default async function Home({ searchParams }) {
                 <span className="body"><strong>Weekly reflection {wk ? 'still a draft' : 'not started'}</strong><br /><span className="muted">Week {isoWeek(lastWeek)} is ready to review</span></span>
                 <span className="go">Start →</span>
               </a>);
-            if (!latest || latest < month) system.push(
-              <a key="fin" href="/finance" className="action-item">
+            if (isSunday && lastBalDate !== today) system.push(
+              <a key="fin-sun" href="/finance?open=checkin" className="action-item">
                 <SourceIcon source="Finance" />
-                <span className="body"><strong>Monthly finance update for {monthLabel(month)}</strong><br /><span className="muted">Net worth not entered yet this month</span></span>
+                <span className="body"><strong>Sunday money check-in</strong><br /><span className="muted">Update your account balances (2 minutes){lastBalDate ? ` · last ${fmtDate(lastBalDate)}` : ''}</span></span>
+                <span className="go">Check in →</span>
+              </a>);
+            else if (!latest || latest < month) system.push(
+              <a key="fin" href="/finance?open=checkin" className="action-item">
+                <SourceIcon source="Finance" />
+                <span className="body"><strong>Monthly finance update for {monthLabel(month)}</strong><br /><span className="muted">No balances entered yet this month</span></span>
                 <span className="go">Update →</span>
               </a>);
             if (!lastHealth || lastHealth < addDays(today, -7)) system.push(
@@ -235,9 +247,9 @@ export default async function Home({ searchParams }) {
 
       <div className="row">
         <a href="/finance" className="card tile" style={{ textDecoration: 'none', color: 'var(--ink)' }}>
-          <p className="muted" style={{ margin: 0 }}>Net worth</p>
-          <p className="stat">{eur(nw)}</p>
-          {nwChange === null ? <span className="muted">{latest ? monthLabel(latest) : 'Not entered yet'}</span> : <span className={nwChange >= 0 ? 'pos' : 'neg'}>{nwChange >= 0 ? '▲' : '▼'} {pct(Math.abs(nwChange))} vs last month</span>}
+          <p className="muted" style={{ margin: 0 }}>{spendPower !== null ? 'Spending power' : 'Total balance'}</p>
+          <p className={`stat ${spendPower !== null ? (spendPower >= 0 ? '' : 'neg') : ''}`}>{eur(spendPower !== null ? spendPower : nw)}</p>
+          {spendPower !== null ? <span className="muted">Total balance {eur(nw)}</span> : nwChange === null ? <span className="muted">{latest ? monthLabel(latest) : 'Not entered yet'}</span> : <span className={nwChange >= 0 ? 'pos' : 'neg'}>{nwChange >= 0 ? '▲' : '▼'} {pct(Math.abs(nwChange))} vs last month</span>}
         </a>
         <a href="/finance" className="card tile" style={{ textDecoration: 'none', color: 'var(--ink)' }}>
           <p className="muted" style={{ margin: 0 }}>Saved this month</p>

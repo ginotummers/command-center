@@ -6,7 +6,8 @@ import { niceTicks, fmt, compact } from './LineChart';
 // points: [{ label, short, value|null }]; `current` index is drawn in the full accent.
 const H = 220, PAD = { l: 58, r: 12, t: 16, b: 30 };
 
-export default function BarChart({ points, color = '#C9A15F', label = 'Value', current = points.length - 1 }) {
+// lines: optional overlays [{ label, color, values: [number|null per point], dashed }]
+export default function BarChart({ points, color = '#C9A15F', label = 'Value', current = points.length - 1, lines = [] }) {
   const box = useRef(null);
   const [W, setW] = useState(560);
   const [hover, setHover] = useState(null);
@@ -19,7 +20,8 @@ export default function BarChart({ points, color = '#C9A15F', label = 'Value', c
   const vals = points.map((p) => p.value).filter((v) => v !== null && v !== undefined);
   if (!vals.length) return <div ref={box}><p className="empty" style={{ margin: 0 }}>Appears once you add data.</p></div>;
 
-  const { lo, hi, ticks } = niceTicks(Math.min(0, ...vals), Math.max(0, ...vals));
+  const lineVals = lines.flatMap((l) => l.values.filter((v) => v !== null && v !== undefined));
+  const { lo, hi, ticks } = niceTicks(Math.min(0, ...vals, ...lineVals), Math.max(0, ...vals, ...lineVals));
   const n = points.length;
   const slot = (W - PAD.l - PAD.r) / n;
   const bw = Math.min(56, slot * 0.6);
@@ -54,11 +56,27 @@ export default function BarChart({ points, color = '#C9A15F', label = 'Value', c
             </g>
           );
         })}
+        {lines.map((l) => {
+          const pts = l.values.map((v, i) => (v === null || v === undefined ? null : `${cx(i)},${y(v)}`));
+          const segs = []; let cur = [];
+          pts.forEach((p) => { if (p) cur.push(p); else { if (cur.length) segs.push(cur); cur = []; } });
+          if (cur.length) segs.push(cur);
+          return segs.map((sg, k) => (sg.length > 1
+            ? <polyline key={l.label + k} points={sg.join(' ')} fill="none" stroke={l.color} strokeWidth="2" strokeDasharray={l.dashed ? '6 5' : undefined} strokeLinejoin="round" style={{ pointerEvents: 'none' }} />
+            : <circle key={l.label + k} cx={sg[0].split(',')[0]} cy={sg[0].split(',')[1]} r="3.5" fill={l.color} style={{ pointerEvents: 'none' }} />));
+        })}
       </svg>
+      {lines.length > 0 && (
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, marginTop: 6 }} className="muted">
+          <span><span aria-hidden="true" style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: color, marginRight: 6, verticalAlign: -1 }} />{label}</span>
+          {lines.map((l) => <span key={l.label}><span aria-hidden="true" style={{ display: 'inline-block', width: 16, height: 0, borderTop: `2px ${l.dashed ? 'dashed' : 'solid'} ${l.color}`, marginRight: 6, verticalAlign: 3 }} />{l.label}</span>)}
+        </div>
+      )}
       {hp && (
         <div className="lc-tip" style={{ left: `${(cx(hover) / W) * 100}%`, top: `${(Math.min(y(hp.value), y0) / H) * 100}%` }}>
           <span className="muted" style={{ fontSize: 11 }}>{hp.label}</span>
           <strong>{fmt(hp.value)}</strong>
+          {lines.map((l) => (l.values[hover] !== null && l.values[hover] !== undefined ? <span key={l.label} style={{ fontSize: 11 }}>{l.label}: {fmt(l.values[hover])}</span> : null))}
           {prevVal !== undefined && prevVal !== 0 && (
             <span style={{ fontSize: 11 }} className="muted">{hp.value >= prevVal ? '▲' : '▼'} {fmt(Math.abs(hp.value - prevVal))} vs previous</span>
           )}
