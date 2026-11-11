@@ -2,10 +2,9 @@ import { createClient } from '@/lib/supabase';
 import { addDays, fmtDate } from '@/lib/util';
 import { SECTIONS, DAILY, WEEKLY, TEACHINGS, teachingFor, DEFAULT_SETTINGS, WEEKDAYS, dubaiNow, periods, sectionItems } from '@/lib/wish';
 import Checklist from './Checklist';
-import ImageInput from './ImageInput';
 import PdfReader from './PdfReader';
 import VisionCanvas from './VisionCanvas';
-import { saveChiefAim, saveSettings } from './actions';
+import { saveSettings } from './actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +60,7 @@ export default async function WishPage({ searchParams }) {
   };
 
   // Signed links for private images and the PDF (valid one hour)
-  const imgPaths = [s.chief_image_path, ...(vision || []).map((v) => v.image_path)].filter(Boolean);
+  const imgPaths = (vision || []).map((v) => v.image_path).filter(Boolean);
   const signed = {};
   if (imgPaths.length) {
     const { data } = await supabase.storage.from('wish').createSignedUrls(imgPaths, 3600);
@@ -79,7 +78,6 @@ export default async function WishPage({ searchParams }) {
   }
 
   const teaching = teachingFor(day);
-  const editAim = sp.edit === 'aim' || !s.chief_aim;
   const inMorning = now.minutes < 12 * 60;
   const [eh, em] = s.evening_start.split(':').map(Number);
   const inEvening = now.minutes >= eh * 60 + em - 60;
@@ -99,13 +97,6 @@ export default async function WishPage({ searchParams }) {
           <a key={t} href={`/wish?tab=${t}`} className={`pill${tab === t ? ' active' : ''}`} aria-current={tab === t ? 'page' : undefined}>{label}</a>
         ))}
       </nav>
-
-      {tab !== 'overview' && s.chief_aim && (
-        <a href="/wish" className="wish-aim-strip">
-          <span className="overline" style={{ color: 'var(--gold)' }}>Chief Aim</span>
-          <span className="wish-aim-strip-text">{s.chief_aim}</span>
-        </a>
-      )}
 
       {loadError && <p className="neg" role="alert">{loadError}</p>}
       {sp.saved && <p className="pos" role="status" style={{ margin: 0 }}>Saved.</p>}
@@ -128,29 +119,6 @@ export default async function WishPage({ searchParams }) {
               </div>
             </section>
           </div>
-
-          <section className="card wish-aim">
-            <div className="card-head"><h2>My Chief Aim</h2>{!editAim && <a href="/wish?edit=aim">Edit</a>}</div>
-            {editAim ? (
-              <form action={saveChiefAim} className="stack">
-                <label>My current Chief Aim<textarea name="chief_aim" defaultValue={s.chief_aim || ''} placeholder="One Chief Aim, exciting and believable (the sweet spot)" required style={{ minHeight: 64 }} /></label>
-                <label>WHY I desire it<textarea name="chief_why" defaultValue={s.chief_why || ''} /></label>
-                <label>The feeling of already possessing it<textarea name="chief_feeling" defaultValue={s.chief_feeling || ''} /></label>
-                <ImageInput userId={user.id} label="Image for my Chief Aim (optional)" currentUrl={signed[s.chief_image_path] || null} />
-                {s.chief_image_path && <label className="check"><input type="checkbox" name="remove_image" /> Remove current image</label>}
-                <div style={{ display: 'flex', gap: 10 }}><button className="btn" type="submit">Save Chief Aim</button>{s.chief_aim && <a className="btn ghost" href="/wish">Cancel</a>}</div>
-              </form>
-            ) : (
-              <div className="wish-aim-body">
-                {s.chief_image_path && signed[s.chief_image_path] && <img src={signed[s.chief_image_path]} alt="My Chief Aim" className="wish-aim-img" />}
-                <div style={{ flex: 1, minWidth: 240, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <p className="wish-aim-text">{s.chief_aim}</p>
-                  {s.chief_why && <div><p className="overline">Why</p><p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{s.chief_why}</p></div>}
-                  {s.chief_feeling && <div><p className="overline">The feeling of having it now</p><p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{s.chief_feeling}</p></div>}
-                </div>
-              </div>
-            )}
-          </section>
 
           <section className="card" id="reminders">
             <details open={sp.saved === 'settings'}>

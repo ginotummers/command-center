@@ -50,7 +50,6 @@ export default async function Home({ searchParams }) {
   const wCount = (ids, items) => ({ done: items.filter((i) => ids.includes(i.id)).length, total: items.length });
   const wish = {
     teaching: teachingFor(wNow.date),
-    aim: wSet?.chief_aim || null,
     morning: wCount(wDay, sectionItems('morning')),
     evening: wCount(wDay, sectionItems('evening')),
     weekly: wCount(wWeek, WEEKLY),
@@ -189,9 +188,6 @@ export default async function Home({ searchParams }) {
         <div className="row" style={{ gap: 20, alignItems: 'center' }}>
           <div style={{ flex: '2 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <p className="wish-widget-teaching">{wish.teaching.text}</p>
-            {wish.aim
-              ? <a href="/wish" className="muted" style={{ fontSize: 13, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><span style={{ color: 'var(--gold)', fontWeight: 600 }}>Chief Aim · </span>{wish.aim}</a>
-              : <a href="/wish?edit=aim" style={{ fontSize: 13 }}>Set your Chief Aim →</a>}
           </div>
           <div style={{ flex: '1 1 240px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[['Morning', wish.morning, '/wish?tab=daily#morning'], ['Evening', wish.evening, '/wish?tab=daily#evening'], ['This week', wish.weekly, '/wish?tab=weekly']].map(([label, p, href]) => (
