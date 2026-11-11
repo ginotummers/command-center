@@ -1,6 +1,7 @@
+import { netWorthAsOf } from '@/lib/networth';
 import { createClient } from '@/lib/supabase';
 import { progress } from '@/lib/goals';
-import { eur, pct, fmtDate, greeting, longToday, monthStart, shiftMonth, monthLabel, todayIso, weekStart, addDays, isoWeek } from '@/lib/util';
+import { eur, pct, fmtDate, greeting, longToday, monthStart, shiftMonth, monthLabel, todayIso, weekStart, addDays, isoWeek, lastDayOfMonth } from '@/lib/util';
 import ProgressBar from './goals/ProgressBar';
 import SyncButton from './components/SyncButton';
 import SourceIcon from './components/SourceIcon';
@@ -23,7 +24,7 @@ export default async function Home({ searchParams }) {
   const lastWeek = addDays(thisWeek, -7);
   const [{ data: goalsData }, { data: nwData }, { data: inc }, { data: exp }, { data: refl }] = await Promise.all([
     supabase.from('goals').select('*').eq('type', 'main').eq('archived', false).order('deadline', { ascending: true, nullsFirst: false }),
-    supabase.from('net_worth_items').select('month,kind,value').order('month'),
+    supabase.from('net_worth_items').select('month,kind,type,label,value,entered_on,created_at').order('entered_on'),
     supabase.from('income').select('amount').eq('month', month),
     supabase.from('expenses').select('amount').eq('month', month),
     supabase.from('reflections').select('id,type,status,period_start').gte('period_start', lastWeek).eq('type', 'weekly'),
@@ -86,8 +87,9 @@ export default async function Home({ searchParams }) {
   (nwData || []).forEach((r) => { (byMonth[r.month] = byMonth[r.month] || []).push(r); });
   const months = Object.keys(byMonth).sort();
   const latest = months[months.length - 1];
-  const nw = latest ? netWorth(byMonth[latest]) : null;
-  const prevNw = latest && byMonth[shiftMonth(latest, -1)] ? netWorth(byMonth[shiftMonth(latest, -1)]) : null;
+  // latest value per asset (same logic as the Finance page)
+  const nw = netWorthAsOf(nwData, '9999-12-31');
+  const prevNw = netWorthAsOf(nwData, lastDayOfMonth(shiftMonth(month, -1)));
   const nwChange = nw !== null && prevNw ? ((nw - prevNw) / Math.abs(prevNw)) * 100 : null;
   const income = (inc || []).reduce((a, r) => a + Number(r.amount), 0);
   const expenses = (exp || []).reduce((a, r) => a + Number(r.amount), 0);

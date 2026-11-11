@@ -6,10 +6,11 @@ import { num, str, todayIso } from '@/lib/util';
 
 const TABLES = ['income', 'expenses', 'net_worth_items'];
 
-function back(fd) {
+function back(fd, open) {
   const m = String(fd.get('month') || '');
-  return `/finance?m=${m.slice(0, 7)}`;
+  return `/finance?m=${m.slice(0, 7)}${open ? `&open=${open}` : ''}`;
 }
+const incomeCategory = (v) => (str(v) || 'other').toLowerCase().replace(/\s+/g, ' ').slice(0, 40);
 
 function safeLink(v) {
   const s = str(v);
@@ -25,12 +26,24 @@ export async function addIncome(fd) {
   const amount = num(fd.get('amount'));
   if (amount !== null) {
     const { error } = await supabase.from('income').insert({
-      month: String(fd.get('month')), source: str(fd.get('source')) || 'Income', amount, recurring: fd.get('recurring') === 'on',
+      month: String(fd.get('month')), source: str(fd.get('source')) || 'Income', amount,
+      category: incomeCategory(fd.get('category')), recurring: fd.get('recurring') === 'on',
     });
     if (error) throw new Error(error.message);
   }
   revalidatePath('/finance'); revalidatePath('/');
-  redirect(back(fd));
+  redirect(back(fd, 'income'));
+}
+
+export async function updateIncome(fd) {
+  const supabase = await createClient();
+  const amount = num(fd.get('amount'));
+  const values = { source: str(fd.get('source')) || 'Income', category: incomeCategory(fd.get('category')), recurring: fd.get('recurring') === 'on' };
+  if (amount !== null) values.amount = amount;
+  const { error } = await supabase.from('income').update(values).eq('id', String(fd.get('id')));
+  if (error) throw new Error(error.message);
+  revalidatePath('/finance'); revalidatePath('/');
+  redirect(back(fd, 'income'));
 }
 
 const DEFAULT_CATS = ['housing', 'food', 'supplements', 'subscriptions', 'transport', 'personal', 'business', 'giving', 'other'];
@@ -59,7 +72,7 @@ export async function updateExpense(fd) {
   const { error } = await supabase.from('expenses').update(values).eq('id', String(fd.get('id')));
   if (error) throw new Error(error.message);
   revalidatePath('/finance'); revalidatePath('/');
-  redirect(back(fd));
+  redirect(back(fd, 'expenses'));
 }
 
 export async function addExpense(fd) {
@@ -73,7 +86,7 @@ export async function addExpense(fd) {
     if (error) throw new Error(error.message);
   }
   revalidatePath('/finance'); revalidatePath('/');
-  redirect(back(fd));
+  redirect(back(fd, 'expenses'));
 }
 
 const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
@@ -93,7 +106,7 @@ export async function addNetWorth(fd) {
     if (error) throw new Error(error.message);
   }
   revalidatePath('/finance'); revalidatePath('/');
-  redirect(`/finance?m=${month.slice(0, 7)}`);
+  redirect(back(fd));
 }
 
 export async function updateNetWorth(fd) {
@@ -105,7 +118,7 @@ export async function updateNetWorth(fd) {
   const { error } = await supabase.from('net_worth_items').update(values).eq('id', String(fd.get('id')));
   if (error) throw new Error(error.message);
   revalidatePath('/finance'); revalidatePath('/');
-  redirect(values.month ? `/finance?m=${values.month.slice(0, 7)}` : back(fd));
+  redirect(back(fd));
 }
 
 export async function removeRow(fd) {
@@ -115,22 +128,20 @@ export async function removeRow(fd) {
   const { error } = await supabase.from(table).delete().eq('id', String(fd.get('id')));
   if (error) throw new Error(error.message);
   revalidatePath('/finance'); revalidatePath('/');
-  redirect(back(fd));
+  redirect(back(fd, { income: 'income', expenses: 'expenses' }[table]));
 }
 
-// Copy last month's recurring income/expenses and net worth items into this month
+// Copy last month's recurring income and expenses into this month (net worth carries forward on its own)
 export async function copyFromPrevious(fd) {
   const month = String(fd.get('month'));
   const prev = String(fd.get('prev'));
   const supabase = await createClient();
-  const [{ data: inc }, { data: exp }, { data: nw }] = await Promise.all([
-    supabase.from('income').select('source,amount,currency,recurring').eq('month', prev).eq('recurring', true),
+  const [{ data: inc }, { data: exp }] = await Promise.all([
+    supabase.from('income').select('source,category,amount,currency,recurring').eq('month', prev).eq('recurring', true),
     supabase.from('expenses').select('name,category,amount,currency,recurring,link,note').eq('month', prev).eq('recurring', true),
-    supabase.from('net_worth_items').select('kind,type,label,value,currency').eq('month', prev),
   ]);
   if (inc?.length) await supabase.from('income').insert(inc.map((r) => ({ ...r, month })));
   if (exp?.length) await supabase.from('expenses').insert(exp.map((r) => ({ ...r, month })));
-  if (nw?.length) await supabase.from('net_worth_items').insert(nw.map((r) => ({ ...r, month, entered_on: todayIso() })));
   revalidatePath('/finance'); revalidatePath('/');
   redirect(back(fd));
 }

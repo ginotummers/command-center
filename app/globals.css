@@ -188,3 +188,20 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .fold[open] > summary .fold-chev { transform: rotate(90deg); }
 .fold[open] > summary { border-bottom: 1px solid var(--line); }
 .fold .scroll { padding: 4px 12px 10px; }
+
+/* Folding finance blocks */
+.fold-amount { min-width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+.fold-plus { color: var(--gold); width: 12px; font-weight: 700; }
+.fold-body { padding: 14px 16px 16px; }
+.add-fold { border-style: dashed; }
+.block-card { padding-top: 20px; padding-bottom: 20px; align-self: flex-start; }
+.block-fold > summary { list-style: none; display: flex; align-items: center; gap: 12px; cursor: pointer; min-height: 44px; }
+.block-fold > summary::-webkit-details-marker { display: none; }
+.block-fold > summary h2 { margin: 0; }
+.block-fold > summary .fold-chev { font-size: 14px; }
+.block-fold[open] > summary .fold-chev { transform: rotate(90deg); }
+.block-body { margin-top: 18px; display: flex; flex-direction: column; gap: 14px; }
+.stack-sm { display: flex; flex-direction: column; gap: 10px; }
+.add-form { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 4px; }
+.edit-cell { background: var(--surface-sunken); border-radius: 12px; padding: 12px !important; }
+.row-actions { white-space: nowrap; text-align: right; }
