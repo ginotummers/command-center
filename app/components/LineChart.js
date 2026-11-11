@@ -5,10 +5,10 @@ import { useEffect, useRef, useState } from 'react';
 // points: [{ label: 'Nov 2026', short: 'Nov', value: number|null }]  (null = no data that month)
 const H = 220, PAD = { l: 58, r: 16, t: 16, b: 30 };
 
-const fmt = (n) => new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
-const compact = (n) => (Math.abs(n) >= 1000 ? `€${+(n / 1000).toFixed(Math.abs(n) >= 100000 ? 0 : 2)}k` : `€${Math.round(n)}`);
+export const fmt = (n) => new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
+export const compact = (n) => (Math.abs(n) >= 1000 ? `€${+(n / 1000).toFixed(Math.abs(n) >= 100000 ? 0 : 2)}k` : `€${Math.round(n)}`);
 
-function niceTicks(min, max, count = 4) {
+export function niceTicks(min, max, count = 4) {
   if (min === max) { const pad = Math.abs(min) * 0.1 || 100; min -= pad; max += pad; }
   const raw = (max - min) / count;
   const mag = 10 ** Math.floor(Math.log10(raw));

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase';
 import { eur, pct, monthStart, shiftMonth, monthLabel, todayIso, lastDayOfMonth } from '@/lib/util';
 import { NW_TYPES, assets, netWorthAsOf } from '@/lib/networth';
 import LineChart from '../components/LineChart';
+import BarChart from '../components/BarChart';
 import { addIncome, updateIncome, addExpense, updateExpense, addNetWorth, updateNetWorth, removeRow, copyFromPrevious } from './actions';
 
 export const metadata = { title: 'Finance · Personal Operating Center' };
@@ -255,7 +256,7 @@ export default async function Money({ searchParams }) {
         <section className="card narrow">
           <h2 style={{ marginBottom: 4 }}>Net worth over time</h2>
           <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>Balance at the end of each month · hover for values</p>
-          <LineChart points={nwPoints} color="#C9A15F" label="Net worth" area />
+          <BarChart points={nwPoints} color="#C9A15F" label="Net worth" />
         </section>
       </div>
 
