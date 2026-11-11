@@ -158,10 +158,8 @@ export default async function Money({ searchParams }) {
               ))}
             </div>
           )}
-          <div className="scroll"><table>
-            <thead><tr><th>Expense</th><th>Category</th><th className="num">Amount</th><th></th></tr></thead>
-            <tbody>
-              {(expenses || []).map((r) => editing?.id === r.id ? (
+          {(() => {
+            const row = (r) => (editing?.id === r.id ? (
                 <tr key={r.id} id={`exp-${r.id}`}>
                   <td colSpan={4} style={{ background: 'var(--surface-sunken)', borderRadius: 12 }}>
                     <form action={updateExpense} style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '6px 2px' }}>
@@ -187,10 +185,31 @@ export default async function Money({ searchParams }) {
                   <td className="muted" style={{ textTransform: 'capitalize' }}>{r.category}</td>
                   <td className="num">{eur(r.amount)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}><a className="linkbtn" href={`/finance?m=${month.slice(0, 7)}&edit=${r.id}#exp-${r.id}`}>Edit</a><Delete table="expenses" id={r.id} month={month} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table></div>
+                </tr>));
+            // Folded per category; a group opens when you edit something in it
+            const groups = [...new Set((expenses || []).map((e) => e.category || 'other'))]
+              .map((c) => { const list = (expenses || []).filter((e) => (e.category || 'other') === c); return { c, list, total: sum(list, 'amount') }; })
+              .sort((a, b) => b.total - a.total);
+            if (!groups.length) return <p className="empty">No expenses for this month yet.</p>;
+            return (
+              <div className="fold-list">
+                {groups.map(({ c, list, total }) => (
+                  <details key={c} className="fold" open={!!editing && (editing.category || 'other') === c}>
+                    <summary>
+                      <span className="fold-chev" aria-hidden="true">▸</span>
+                      <span style={{ flex: 1, textTransform: 'capitalize', fontWeight: 600 }}>{c}</span>
+                      <span className="muted" style={{ fontSize: 13 }}>{list.length} item{list.length === 1 ? '' : 's'}</span>
+                      <strong style={{ minWidth: 90, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{eur(total)}</strong>
+                    </summary>
+                    <div className="scroll"><table>
+                      <thead><tr><th>Expense</th><th>Category</th><th className="num">Amount</th><th></th></tr></thead>
+                      <tbody>{list.map(row)}</tbody>
+                    </table></div>
+                  </details>
+                ))}
+              </div>
+            );
+          })()}
           <datalist id="expense-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
           <form action={addExpense} style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
             <input type="hidden" name="month" value={month} />

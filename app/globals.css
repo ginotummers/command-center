@@ -178,3 +178,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .vb-x { position: absolute; top: -14px; right: -14px; width: 34px; height: 34px; min-height: 0; padding: 0; border-radius: 999px; border: 2px solid #fff; background: #C2453B; color: #fff; font-size: 22px; line-height: 1; font-weight: 700; cursor: pointer; box-shadow: 0 3px 10px rgba(0,0,0,0.45); opacity: 0; transition: opacity .15s; z-index: 2; }
 .vb-card:hover .vb-x, .vb-card.sel .vb-x { opacity: 1; }
 @media (hover: none) { .vb-x { opacity: 1; } }
+
+/* Foldable lists (finance expenses) */
+.fold-list { display: flex; flex-direction: column; gap: 8px; }
+.fold { border: 1px solid var(--line); border-radius: 14px; background: rgba(0,3,16,0.25); }
+.fold > summary { list-style: none; display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; min-height: 48px; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold-chev { color: var(--gold); transition: transform .15s; display: inline-block; width: 12px; }
+.fold[open] > summary .fold-chev { transform: rotate(90deg); }
+.fold[open] > summary { border-bottom: 1px solid var(--line); }
+.fold .scroll { padding: 4px 12px 10px; }
