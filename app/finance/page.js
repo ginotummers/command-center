@@ -3,6 +3,9 @@ import { eur, pct, monthStart, shiftMonth, monthLabel, todayIso, lastDayOfMonth 
 import { getFx, accountStates, totals, planTarget, planBaseline, periodEnds, basisEur, liveEur, fmtCur, KIND_LABEL, CURRENCIES } from '@/lib/finance';
 import LineChart from '../components/LineChart';
 import BarChart from '../components/BarChart';
+import InfoButton from '../components/InfoButton';
+import FinanceSuggestions from '../components/FinanceSuggestions';
+import { financeInsights } from '@/lib/finance-insights';
 import {
   addIncome, updateIncome, addExpense, updateExpense, removeRow, copyFromPrevious,
   addAccount, updateAccount, checkIn, updateBalance, addMoneyItem, settleMoneyItem, savePlan,
@@ -70,17 +73,18 @@ export default async function Money({ searchParams }) {
 
   const supabase = await createClient();
   const [{ data: income }, { data: expenses }, { data: settings }, { data: prevExp }, { data: inc12 }, { data: exp12 },
-    { data: accAll }, { data: balAll }, { data: moneyAll }, { data: fin }] = await Promise.all([
+    { data: accAll }, { data: balAll }, { data: moneyAll }, { data: fin }, { data: aiSugg }] = await Promise.all([
     supabase.from('income').select('*').eq('month', month).eq('scope', scope).order('created_at'),
     supabase.from('expenses').select('*').eq('month', month).eq('scope', scope).order('created_at'),
     supabase.from('settings').select('expense_categories').maybeSingle(),
-    supabase.from('expenses').select('amount').eq('month', prev).eq('scope', scope),
+    supabase.from('expenses').select('amount,category').eq('month', prev).eq('scope', scope),
     supabase.from('income').select('month,amount').eq('scope', scope).gte('month', from12).lte('month', month),
     supabase.from('expenses').select('month,amount').eq('scope', scope).gte('month', from12).lte('month', month),
     supabase.from('accounts').select('*').order('sort').order('created_at'),
     supabase.from('balances').select('*').order('date').order('created_at'),
     supabase.from('money_items').select('*').order('due_date', { nullsFirst: false }).order('created_at'),
     supabase.from('finance_settings').select('*').maybeSingle(),
+    supabase.from('suggestions').select('id,title,body,basis,priority,category,scope').eq('status', 'open').eq('category', 'finance').eq('scope', scope).order('created_on', { ascending: false }).limit(8),
   ]);
   const fx = await getFx(fin);
   const accounts = (accAll || []).filter((a) => a.scope === scope && !a.archived);
@@ -139,6 +143,10 @@ export default async function Money({ searchParams }) {
   const incM = monthly(inc12); const expM = monthly(exp12);
   const flowMonths = []; for (let m = month, i = 0; i < 6 || (i < 12 && (incM[m] || expM[m])); i++, m = shiftMonth(m, -1)) flowMonths.unshift(m);
   const fp = (m, v) => ({ label: monthLabel(m), short: monthLabel(m).slice(0, 3), value: v ?? null });
+  const insights = financeInsights({
+    scope, month, today, accounts, balances, incByMonth: incM, expByMonth: expM,
+    expRows: expenses || [], prevExpRows: prevExp || [], moneyOpen: money.filter((m) => m.status === 'open'), plan: fin,
+  });
   const cancel = (o) => <a className="btn ghost small" href={qs(o ? { open: o } : {})}>Cancel</a>;
 
   const expenseRow = (r) => (editExp?.id === r.id ? (
@@ -246,8 +254,34 @@ export default async function Money({ searchParams }) {
     <>
       <div className="section-title" style={{ alignItems: 'flex-end' }}>
         <div>
-          <p className="overline">Finance · EUR</p>
-          <h1>{monthLabel(month)}</h1>
+          <p className="overline">Finance · EUR · {isPersonal ? 'Personal' : 'Business'}</p>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 14 }}>{monthLabel(month)}
+            <InfoButton title="How this page works">
+              <p><strong>The idea.</strong> Know what you really have and what you can really spend. Once a week you write down the balance of every account (a snapshot, not every transaction); the page turns that into a monthly picture, measures you against your savings plan, and tells you your <em>spending power</em>.</p>
+              <h3>Every Sunday (2 minutes)</h3>
+              <ol>
+                <li>Open <strong>Sunday check-in</strong> and type the balance of each account in its own currency (EUR, USD or AED). Only the ones that changed are saved; USD and AED are converted at the ECB rate of that day.</li>
+                <li>For gold and the S&amp;P 500, also update <strong>put in so far</strong> when you've invested more.</li>
+                <li>Add anything new under <strong>You owe</strong> (bills, tax) or <strong>Owed to you</strong> (invoices you're waiting for). Tick them off when paid or received.</li>
+              </ol>
+              <h3>Once a month</h3>
+              <ol>
+                <li>Use <strong>Copy from last month</strong> to bring over recurring income and expenses, then adjust what changed.</li>
+                <li>Invest your {eur(Number(fin?.plan_invest ?? 2000))} and keep {eur(Number(fin?.plan_buffer ?? 500))} as cash buffer.</li>
+                <li>Read the insights at the bottom of the page.</li>
+              </ol>
+              <h3>The numbers</h3>
+              <ul>
+                <li><strong>Total balance:</strong> all your accounts added up. Investments count at what you put in, because their value goes up and down; today's value and your gain or loss are shown next to it. This way you never count yourself rich on a good market day.</li>
+                <li><strong>Savings plan:</strong> a target balance that rises by {eur(Number(fin?.plan_monthly ?? 2500))} every month ({eur(Number(fin?.plan_monthly ?? 2500) * 12)} a year), starting from your total at the end of the month before the plan starts.</li>
+                <li><strong>Spending power</strong> = total balance − set-aside buckets − bills you owe − this month's savings target. This is the only money you can spend this month while staying on plan. Green means ahead, red means behind. When salary comes in it goes up; every euro you spend brings it down.</li>
+                <li><strong>Set aside:</strong> yearly or quarterly bills (trade licence, VPN) are booked as a monthly expense. If you keep that money in a separate bucket, add it as a “Set-aside bucket” account: it counts in your total, not in your spending power.</li>
+                <li><strong>Owed to you</strong> is shown as “expected in” but not counted until it arrives. <strong>You owe</strong> is subtracted right away.</li>
+                <li><strong>Personal / Business</strong> switch at the top: business money is tracked separately and never counts towards your personal spending power.</li>
+              </ul>
+              <p className="muted" style={{ fontSize: 13 }}>Based on the weekly balance sheet your friend uses, adapted to a monthly overview with weekly check-ins.</p>
+            </InfoButton>
+          </h1>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
           <div className="seg" role="tablist" aria-label="Personal or business">
@@ -580,6 +614,27 @@ export default async function Money({ searchParams }) {
           <LineChart points={flowMonths.map((m) => fp(m, expM[m]))} color="#EF5B5B" label="Expenses" />
         </section>
       </div>
+      <section className="card" id="insights">
+        <div className="card-head"><h2>Insights &amp; suggestions</h2><span className="muted" style={{ fontSize: 13 }}>From your {scope} numbers</span></div>
+        {insights.length === 0 && !(aiSugg || []).length ? (
+          <p className="empty" style={{ margin: 0 }}>Insights appear once you have a couple of check-ins and a month of income and expenses.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {insights.length > 0 && (
+              <div className="insight-grid">
+                {insights.map((i, k) => (
+                  <div key={k} className={`insight ${i.tone}`}>
+                    <span className="insight-dot" aria-hidden="true" />
+                    <div><strong>{i.title}</strong><p className="muted" style={{ margin: '4px 0 0', fontSize: 13 }}>{i.body}</p></div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <FinanceSuggestions items={aiSugg || []} />
+          </div>
+        )}
+        <p className="muted" style={{ margin: '12px 0 0', fontSize: 12 }}>Insights are calculated from your data every time you open the page. Suggestions marked “Claude” are written during the first sync of the day.</p>
+      </section>
     </>
   );
 }
