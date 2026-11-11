@@ -208,3 +208,16 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 
 /* Line charts */
 .lc-tip { position: absolute; transform: translate(-50%, calc(-100% - 14px)); pointer-events: none; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: #0E1838; border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,0.45); white-space: nowrap; font-size: 14px; z-index: 5; }
+
+/* Home: copy, folding lists, suggestions */
+.copy-btn { flex: 0 0 auto; width: 34px; height: 34px; min-height: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-muted); cursor: pointer; }
+.copy-btn:hover { color: var(--gold); border-color: var(--gold-dark); }
+.copy-btn.ok { color: var(--positive); border-color: var(--positive); }
+.more-fold > summary { list-style: none; cursor: pointer; color: var(--gold); font-weight: 600; font-size: 14px; padding: 6px 2px; }
+.more-fold > summary::-webkit-details-marker { display: none; }
+.more-fold[open] > summary .when-closed, .more-fold:not([open]) > summary .when-open { display: none; }
+.more-fold .action-list { margin-top: 8px; }
+.pill-count { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 999px; background: rgba(178,141,81,0.25); font-size: 11px; line-height: 18px; text-align: center; }
+.sugg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.sugg { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface-sunken); }
+button.pill { font: inherit; font-weight: 600; cursor: pointer; }

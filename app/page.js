@@ -5,6 +5,8 @@ import { eur, pct, fmtDate, greeting, longToday, monthStart, shiftMonth, monthLa
 import ProgressBar from './goals/ProgressBar';
 import SyncButton from './components/SyncButton';
 import SourceIcon from './components/SourceIcon';
+import CopyButton from './components/CopyButton';
+import Suggestions from './components/Suggestions';
 import { setFocus } from './home-actions';
 import TodayCalendar from './components/TodayCalendar';
 import WishReminder from './components/WishReminder';
@@ -34,17 +36,18 @@ export default async function Home({ searchParams }) {
     supabase.from('body_metrics').select('date').order('date', { ascending: false }).limit(1),
     supabase.from('calendar_events').select('*').gte('start_at', `${today}T00:00:00+04:00`).lt('start_at', `${tomorrow}T00:00:00+04:00`).order('start_at'),
     supabase.from('tasks').select('*').or(`planned_date.eq.${today},is_overdue.eq.true`).order('start_at', { ascending: true, nullsFirst: false }),
-    supabase.from('focus_items').select('*').or(`status.eq.open,and(status.eq.snoozed,snooze_until.lte.${today})`).order('created_at', { ascending: false }).limit(12),
+    supabase.from('focus_items').select('*').or(`status.eq.open,and(status.eq.snoozed,snooze_until.lte.${today})`).order('created_at', { ascending: false }).limit(40),
     supabase.from('sync_runs').select('id,status,requested_at,finished_at,summary').order('requested_at', { ascending: false }).limit(1),
     supabase.from('work_daily').select('*').gte('date', addDays(today, -1)).order('date'),
   ]);
   // Your Wish Is Your Command: compact widget + at most one reminder pop-up
   const wNow = dubaiNow();
   const wp = periods(wNow.date);
-  const [{ data: wSet }, { data: wChecks }, { data: wLog }] = await Promise.all([
+  const [{ data: wSet }, { data: wChecks }, { data: wLog }, { data: sugg }] = await Promise.all([
     supabase.from('wish_settings').select('*').maybeSingle(),
     supabase.from('wish_checks').select('period_type,period_start,item_id').or(`and(period_type.eq.day,period_start.eq.${wp.day}),and(period_type.eq.week,period_start.eq.${wp.week})`),
     supabase.from('wish_reminders').select('kind,period_start,action,snooze_until').in('period_start', [wp.day, wp.week]),
+    supabase.from('suggestions').select('id,category,title,body,basis,priority,created_on').eq('status', 'open').order('created_on', { ascending: false }).order('priority').limit(40),
   ]);
   const wDay = (wChecks || []).filter((c) => c.period_type === 'day').map((c) => c.item_id);
   const wWeek = (wChecks || []).filter((c) => c.period_type === 'week').map((c) => c.item_id);
@@ -107,50 +110,72 @@ export default async function Home({ searchParams }) {
       {wishDue && <WishReminder kind={wishDue} />}
 
       <div className="row">
-        <section className="card wide">
-          <div className="card-head"><h2>Needs your attention</h2></div>
-          <div className="action-list">
-            {focus.map((f) => (
+        <div className="wide" style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
+          {(() => {
+            const focusRow = (f) => (
               <div key={f.id} className="action-item">
                 <SourceIcon source={f.source} />
                 <a className="body" href={f.link || '#'} target={f.link ? '_blank' : undefined} rel="noopener noreferrer" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
                   <strong>{f.title}</strong>{f.priority === 'high' ? <span className="neg" style={{ fontSize: 12 }}> · high</span> : null}<br /><span className="muted">{f.reason}</span>
                 </a>
+                <CopyButton text={f.title} />
                 <form action={setFocus}><input type="hidden" name="id" value={f.id} /><input type="hidden" name="action" value="done" /><button className="btn small" type="submit" aria-label={`Mark ${f.title} done`}>Done</button></form>
                 <form action={setFocus}><input type="hidden" name="id" value={f.id} /><input type="hidden" name="action" value="snooze" /><button className="btn ghost small" type="submit" aria-label={`Snooze ${f.title} until tomorrow`}>Tomorrow</button></form>
               </div>
-            ))}
-            {!wk || wk.status !== 'submitted' ? (
-              <a href="/reflections" className="action-item">
+            );
+            const system = [];
+            if (!wk || wk.status !== 'submitted') system.push(
+              <a key="refl" href="/reflections" className="action-item">
                 <SourceIcon source="Reflection" />
                 <span className="body"><strong>Weekly reflection {wk ? 'still a draft' : 'not started'}</strong><br /><span className="muted">Week {isoWeek(lastWeek)} is ready to review</span></span>
                 <span className="go">Start →</span>
-              </a>
-            ) : null}
-            {!latest || latest < month ? (
-              <a href="/finance" className="action-item">
+              </a>);
+            if (!latest || latest < month) system.push(
+              <a key="fin" href="/finance" className="action-item">
                 <SourceIcon source="Finance" />
                 <span className="body"><strong>Monthly finance update for {monthLabel(month)}</strong><br /><span className="muted">Net worth not entered yet this month</span></span>
                 <span className="go">Update →</span>
-              </a>
-            ) : null}
-            {!lastHealth || lastHealth < addDays(today, -7) ? (
-              <a href="/health" className="action-item">
+              </a>);
+            if (!lastHealth || lastHealth < addDays(today, -7)) system.push(
+              <a key="health" href="/health" className="action-item">
                 <SourceIcon source="Health" />
                 <span className="body"><strong>Weekly health check-in</strong><br /><span className="muted">{lastHealth ? `Last weigh-in ${fmtDate(lastHealth)}` : 'No weight or body fat logged yet'}</span></span>
                 <span className="go">Log →</span>
-              </a>
-            ) : null}
-            {active.filter((g) => g.deadline && g.deadline < today).map((g) => (
+              </a>);
+            active.filter((g) => g.deadline && g.deadline < today).forEach((g) => system.push(
               <a key={g.id} href={`/goals/${g.id}`} className="action-item">
                 <SourceIcon source="Goal" />
                 <span className="body"><strong>{g.name}</strong><br /><span className="neg">Deadline passed {fmtDate(g.deadline)}</span></span>
                 <span className="go">Review →</span>
-              </a>
-            ))}
-          </div>
-          {!lastRun && <p className="muted" style={{ margin: '14px 0 0', fontSize: 13 }}>Press Sync now to pull focus points from Gmail, Zoom, Wispr Flow and Akiflow.</p>}
-        </section>
+              </a>));
+            const attention = [...focus.filter((f) => f.kind !== 'todo').map(focusRow), ...system];
+            const todos = focus.filter((f) => f.kind === 'todo').map(focusRow);
+            // First three always visible, the rest folded away
+            const list = (rows, empty) => (rows.length === 0 ? <p className="empty" style={{ margin: 0 }}>{empty}</p> : (
+              <>
+                <div className="action-list">{rows.slice(0, 3)}</div>
+                {rows.length > 3 && (
+                  <details className="more-fold">
+                    <summary><span className="when-closed">Show {rows.length - 3} more ▾</span><span className="when-open">Show less ▴</span></summary>
+                    <div className="action-list">{rows.slice(3)}</div>
+                  </details>
+                )}
+              </>
+            ));
+            return (
+              <>
+                <section className="card">
+                  <div className="card-head"><h2>Needs your attention</h2><span className="muted" style={{ fontSize: 13 }}>{attention.length} open</span></div>
+                  {list(attention, lastRun ? 'Nothing needs your attention right now.' : 'Press Sync now to pull focus points from Gmail, Zoom, Wispr Flow and Akiflow.')}
+                </section>
+                <section className="card">
+                  <div className="card-head"><h2>To-dos</h2><span className="muted" style={{ fontSize: 13 }}>From your calls and email · copy a title into Akiflow</span></div>
+                  {list(todos, 'No new to-dos from your calls or email.')}
+                </section>
+              </>
+            );
+          })()}
+        </div>
         <section className="card narrow" style={{ flex: '1 1 380px' }}>
           <div className="card-head"><h2>Today</h2>{next ? <span className="muted" style={{ fontSize: 13 }}>Next: {minsTo < 60 ? `in ${minsTo} min` : tm(next.start_at)} · {next.title}</span> : null}</div>
           {allDay.length > 0 && <p className="muted" style={{ margin: '0 0 8px', fontSize: 13 }}>All day: {allDay.map((e) => e.title).join(' · ')}</p>}
@@ -181,6 +206,11 @@ export default async function Home({ searchParams }) {
         </section>
       </div>
 
+
+      <section className="card" aria-labelledby="sugg-title">
+        <div className="card-head"><h2 id="sugg-title">Suggestions</h2><span className="muted" style={{ fontSize: 13 }}>Advice based on what's going on in your work, life, health and money</span></div>
+        <Suggestions items={[...(sugg || [])].sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] ?? 1) - ({ high: 0, medium: 1, low: 2 }[b.priority] ?? 1))} lastDate={sugg?.[0]?.created_on ? fmtDate(sugg[0].created_on) : null} />
+      </section>
 
       <section className="card" aria-labelledby="wish-widget-title" style={{ padding: 20 }}>
         <div className="card-head" style={{ marginBottom: 10 }}>

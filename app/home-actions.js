@@ -14,3 +14,12 @@ export async function setFocus(fd) {
   revalidatePath('/');
   redirect('/');
 }
+
+export async function setSuggestion(id, status) {
+  if (!['done', 'dismissed'].includes(status)) throw new Error('Bad status');
+  const supabase = await createClient();
+  const { error } = await supabase.from('suggestions').update({ status }).eq('id', String(id));
+  if (error) throw new Error(error.message);
+  revalidatePath('/');
+  return { ok: true };
+}

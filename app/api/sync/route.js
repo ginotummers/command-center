@@ -4,11 +4,12 @@ import { startSync } from '@/lib/sync';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST() {
+export async function POST(request) {
   const supabase = await createClient();
+  const body = await request.json().catch(() => ({}));
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
-  const result = await startSync(supabase);
+  const result = await startSync(supabase, { forceSuggestions: !!body?.suggestions });
   return NextResponse.json(result, { status: result.ok ? 200 : 502 });
 }
 
