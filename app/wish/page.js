@@ -189,7 +189,7 @@ export default async function WishPage({ searchParams }) {
               initialChecked={todayIds}
               sections={SECTIONS.map((sec) => ({ ...sec, items: sectionItems(sec.id), defaultOpen: sec.id === 'morning' ? inMorning : sec.id === 'evening' ? inEvening : !inMorning && !inEvening }))}
             />
-            <p className="muted" style={{ margin: '16px 0 0', fontSize: 12 }}>“Master Reference” items are the 15 daily practices from the Master Reference tracker (feeling the emotion and holding it 68 seconds are one tick), plus the repeat step of the Lesson 16 formula in the evening. “My routine” items are practices you chose to add; they are not from the Master Reference. Tick a practice only when you have actually done it.</p>
+            <p className="muted" style={{ margin: '16px 0 0', fontSize: 12 }}>“Master Reference” items come from the Master Reference daily tracker (feeling the emotion and holding it 68 seconds are one tick), plus the repeat step of the Lesson 16 formula in the evening. Keeping score of progress is part of your weekly review. “My routine” items are practices you chose to add; they are not from the Master Reference. Tick a practice only when you have actually done it.</p>
           </section>
           <section className="card">
             <div className="card-head"><h3>Last 14 days</h3></div>
