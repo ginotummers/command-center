@@ -33,17 +33,19 @@ function Delta({ rows, k, unit, good = 'up' }) {
   return <span className={isGood === null ? 'muted' : isGood ? 'pos' : 'neg'}>{d > 0 ? '▲' : '▼'} {n1(Math.abs(d))}{unit} since {shortD(b.date)}</span>;
 }
 
-function verdict(latest, prev) {
-  if (!prev) return { label: 'First entry', cls: 'muted' };
-  const w = Number(latest.weight_kg ?? 0); const pw = Number(prev.weight_kg ?? 0);
-  const r = Number(latest.reps ?? 0); const pr = Number(prev.reps ?? 0);
-  const vol = (latest.sets || 1) * r * (w || 1); const pvol = (prev.sets || 1) * pr * (pw || 1);
+// One "performance" per exercise per session: all its sets, the best set (heaviest, then most reps) and volume
+const setsText = (sets) => sets.map((x) => `${n1(x.weight_kg)}×${x.reps ?? '—'}`).join(', ');
+function verdict(cur, prev) {
+  if (!prev) return { label: 'First time logged', cls: 'muted' };
+  const w = Number(cur.best.weight_kg ?? 0); const pw = Number(prev.best.weight_kg ?? 0);
+  const r = Number(cur.best.reps ?? 0); const pr = Number(prev.best.reps ?? 0);
   if (w > pw) return { label: `Heavier (+${n1(w - pw)} kg)`, cls: 'pos' };
   if (w === pw && r > pr) return { label: `More reps (+${r - pr})`, cls: 'pos' };
-  if (vol > pvol) return { label: 'More volume', cls: 'pos' };
-  if (vol === pvol) return { label: 'Stalled', cls: 'muted' };
-  return { label: 'Down', cls: 'neg' };
+  if (cur.volume > prev.volume) return { label: `More volume (+${Math.round(cur.volume - prev.volume)} kg)`, cls: 'pos' };
+  if (cur.volume === prev.volume && w === pw && r === pr) return { label: 'Same as last time', cls: 'muted' };
+  return { label: w < pw ? `Lighter (−${n1(pw - w)} kg)` : 'Fewer reps', cls: 'neg' };
 }
+const SESSION_ORDER = ['Push v1', 'Pull v1', 'Push v2', 'Legs', 'Pull v2', 'Abs', 'Other'];
 
 export default async function Health() {
   const supabase = await createClient();
@@ -68,12 +70,33 @@ export default async function Health() {
   const series = (k) => bm.filter((r) => r[k] !== null && r[k] !== undefined).slice(-16)
     .map((r) => ({ label: fmtDate(r.date), short: shortD(r.date), value: Number(r[k]), note: [r.phase ? PHASE_LABEL[r.phase] : null, r.source === 'inbody' ? 'InBody scan' : null].filter(Boolean).join(' · ') || null }));
 
-  const exercises = [...new Set(wo.map((r) => r.exercise))].map((name) => {
-    const rows = wo.filter((r) => r.exercise === name);
-    const latest = rows[rows.length - 1];
-    const prev = [...rows].reverse().find((r) => r.date <= addDays(latest.date, -14)) || null;
-    return { name, latest, prev, v: verdict(latest, prev) };
-  }).sort((a, b) => (a.latest.date < b.latest.date ? 1 : -1));
+  // Group sets into performances (exercise × date) and compare each exercise with its previous session
+  const perfMap = {};
+  wo.forEach((r) => {
+    const k = `${r.exercise}|${r.date}`;
+    const grp = r.block === 'abs' ? 'Abs' : (r.session || 'Other');
+    if (!perfMap[k]) perfMap[k] = { exercise: r.exercise, date: r.date, group: grp, sets: [] };
+    for (let i = 0; i < (r.set_no ? 1 : Math.max(1, r.sets || 1)); i++) perfMap[k].sets.push(r);
+  });
+  const perfs = Object.values(perfMap).map((p) => {
+    const best = [...p.sets].sort((x, y) => Number(y.weight_kg ?? 0) - Number(x.weight_kg ?? 0) || Number(y.reps ?? 0) - Number(x.reps ?? 0))[0];
+    const volume = p.sets.reduce((a, x) => a + Number(x.weight_kg ?? 0) * Number(x.reps ?? 0), 0);
+    return { ...p, sets: [...p.sets].sort((x, y) => (x.set_no ?? 0) - (y.set_no ?? 0)), best, volume };
+  });
+  // Compare like with like: the same exercise within the same session (Push v1 with last week's Push v1)
+  const exercises = [...new Set(perfs.map((p) => `${p.group}|${p.exercise}`))].map((key) => {
+    const [, name] = key.split('|');
+    const list = perfs.filter((p) => `${p.group}|${p.exercise}` === key).sort((x, y) => x.date.localeCompare(y.date));
+    const cur = list[list.length - 1]; const prev = list.length > 1 ? list[list.length - 2] : null;
+    return { key, name, cur, prev, count: list.length, v: verdict(cur, prev) };
+  });
+  const groups = SESSION_ORDER.map((g) => ({ g, list: exercises.filter((e) => e.cur.group === g) })).filter((x) => x.list.length);
+  const compared = exercises.filter((e) => e.prev);
+  const improved = compared.filter((e) => e.v.cls === 'pos').length;
+  const sessions = [...new Set(wo.map((r) => `${r.date}|${r.session || ''}`))].sort().reverse().map((k) => {
+    const [date, session] = k.split('|');
+    return { date, session, rows: wo.filter((r) => r.date === date && (r.session || '') === session) };
+  });
 
   const last7 = daily.filter((r) => r.date > addDays(today, -7));
   const avg = (k) => { const v = last7.filter((r) => r[k] !== null); return v.length ? v.reduce((a, r) => a + Number(r[k]), 0) / v.length : null; };
@@ -161,26 +184,44 @@ export default async function Health() {
           </div>
         )}
         <p className="muted" style={{ margin: '10px 0 16px', fontSize: 13 }}>Abs on push and pull days. Cardio: {plan.cardio || '—'}</p>
-        <h3 style={{ margin: '0 0 8px' }}>Progress per exercise</h3>
-        {exercises.length === 0 ? <p className="empty">No workouts logged yet. Each exercise will show its latest session against two weeks earlier.</p> : (
-          <div className="scroll"><table>
-            <thead><tr><th>Exercise</th><th>Latest</th><th>Two weeks earlier</th><th>Progress</th></tr></thead>
-            <tbody>
-              {exercises.map((e) => (
-                <tr key={e.name}>
-                  <td><strong>{e.name}</strong></td>
-                  <td>{e.latest.sets ? `${e.latest.sets} × ` : ''}{e.latest.reps ?? '—'} reps @ {n1(e.latest.weight_kg)} kg<div className="muted" style={{ fontSize: 12 }}>{fmtDate(e.latest.date)}</div></td>
-                  <td>{e.prev ? <>{e.prev.sets ? `${e.prev.sets} × ` : ''}{e.prev.reps ?? '—'} reps @ {n1(e.prev.weight_kg)} kg<div className="muted" style={{ fontSize: 12 }}>{fmtDate(e.prev.date)}</div></> : <span className="muted">—</span>}</td>
-                  <td className={e.v.cls}><strong>{e.v.label}</strong></td>
-                </tr>
-              ))}
-            </tbody>
-          </table></div>
+        <div className="card-head" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Progress per exercise</h3>
+          {compared.length > 0 && <span className="muted" style={{ fontSize: 13 }}>{improved} of {compared.length} improved vs the previous session</span>}</div>
+        {exercises.length === 0 ? <p className="empty">No workouts logged yet. Each exercise will show its latest session against the one before.</p> : (
+          <div className="fold-list">
+            {groups.map(({ g, list }) => {
+              const up = list.filter((e) => e.v.cls === 'pos').length; const withPrev = list.filter((e) => e.prev).length;
+              return (
+                <details key={g} className="fold">
+                  <summary>
+                    <span className="fold-chev" aria-hidden="true">▸</span>
+                    <span style={{ flex: 1, fontWeight: 600 }}>{g}{todaySession === g ? <span className="tag" style={{ marginLeft: 8 }}>Today</span> : null}</span>
+                    <span className="muted" style={{ fontSize: 13 }}>{list.length} exercise{list.length === 1 ? '' : 's'}{withPrev ? ` · ${up}/${withPrev} up` : ` · last ${shortD(list[0].cur.date)}`}</span>
+                  </summary>
+                  <div className="scroll fold-body"><table>
+                    <thead><tr><th>Exercise</th><th>Latest</th><th>Previous</th><th>Progress</th></tr></thead>
+                    <tbody>{list.map((e) => (
+                      <tr key={e.key}>
+                        <td><strong>{e.name}</strong></td>
+                        <td>{setsText(e.cur.sets)}<div className="muted" style={{ fontSize: 12 }}>{shortD(e.cur.date)}</div></td>
+                        <td>{e.prev ? <>{setsText(e.prev.sets)}<div className="muted" style={{ fontSize: 12 }}>{shortD(e.prev.date)}</div></> : <span className="muted">—</span>}</td>
+                        <td className={e.v.cls}><strong>{e.v.label}</strong></td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                </details>
+              );
+            })}
+          </div>
         )}
+        <p className="muted" style={{ margin: '8px 0 0', fontSize: 12 }}>Sets shown as kg × reps. Progress compares your best set (heaviest, then most reps), then total volume, with the previous time you did the exercise in the same session (e.g. Push v1 with last week's Push v1). Warm-ups are not tracked.</p>
         <details className="fold add-fold" style={{ marginTop: 16 }}>
           <summary><span className="fold-plus" aria-hidden="true">+</span><span style={{ flex: 1, fontWeight: 600 }}>Log a workout</span></summary>
           <form action={addWorkouts} className="fold-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <label style={{ maxWidth: 220 }}>Date<input type="date" name="date" defaultValue={today} /></label>
+            <div className="grid2" style={{ maxWidth: 480 }}>
+              <label>Date<input type="date" name="date" defaultValue={today} /></label>
+              <label>Session<select name="session" defaultValue={todaySession && !/rest/i.test(todaySession) ? todaySession : ''}><option value="">—</option>{SESSION_ORDER.filter((x) => x !== 'Other').map((x) => <option key={x}>{x}</option>)}</select></label>
+            </div>
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>One line per set, or one line per exercise with the number of sets if they were all the same. Easier: send Claude your 1FIT screenshots.</p>
             {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
               <div key={i} className="grid2" style={{ gridTemplateColumns: 'minmax(180px, 3fr) repeat(3, minmax(70px, 1fr)) minmax(120px, 2fr)' }}>
                 <input name={`exercise_${i}`} placeholder={i === 0 ? 'Bench press' : 'Exercise'} aria-label={`Exercise ${i + 1}`} />
@@ -193,14 +234,22 @@ export default async function Health() {
             <div><button className="btn small" type="submit">Save workout</button></div>
           </form>
         </details>
-        {wo.length > 0 && (
+        {sessions.length > 0 && (
           <details className="fold" style={{ marginTop: 8 }}>
-            <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>All logged sets ({wo.length})</span></summary>
-            <div className="scroll fold-body"><table>
-              <tbody>{[...wo].reverse().slice(0, 80).map((r) => (
-                <tr key={r.id}><td className="muted">{fmtDate(r.date)}</td><td>{r.exercise}</td><td>{r.sets ? `${r.sets} × ` : ''}{r.reps ?? '—'} @ {n1(r.weight_kg)} kg</td><td className="row-actions"><Remove table="workout_entries" id={r.id} anchor="training" /></td></tr>
-              ))}</tbody>
-            </table></div>
+            <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Logged sessions ({sessions.length})</span></summary>
+            <div className="fold-body list">
+              {sessions.slice(0, 30).map((ss) => {
+                const ex = [...new Set(ss.rows.map((r) => r.exercise))];
+                return (
+                  <div key={`${ss.date}${ss.session}`}>
+                    <strong>{fmtDate(ss.date)}{ss.session ? ` · ${ss.session}` : ''}</strong>
+                    <div className="muted" style={{ fontSize: 13 }}>
+                      {ex.map((name) => { const rs = ss.rows.filter((r) => r.exercise === name).sort((x, y) => (x.set_no ?? 0) - (y.set_no ?? 0)); return <div key={name}>{name}: {setsText(rs)}</div>; })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </details>
         )}
       </section>

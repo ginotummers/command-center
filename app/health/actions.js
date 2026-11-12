@@ -58,10 +58,15 @@ export async function logNutrition(fd) {
 
 export async function addWorkouts(fd) {
   const date = str(fd.get('date')) || todayIso();
+  const sessionRaw = str(fd.get('session'));
+  const session = sessionRaw && sessionRaw !== 'Abs' ? sessionRaw : null;
   const rows = [];
   for (let i = 0; i < 8; i++) {
     const exercise = str(fd.get(`exercise_${i}`));
-    if (exercise) rows.push({ date, exercise, sets: int(fd.get(`sets_${i}`)), reps: int(fd.get(`reps_${i}`)), weight_kg: num(fd.get(`weight_${i}`)), note: str(fd.get(`note_${i}`)) });
+    if (!exercise) continue;
+    const n = Math.max(1, Math.min(10, int(fd.get(`sets_${i}`)) || 1));
+    const prior = rows.filter((r) => r.exercise === exercise).length;
+    for (let k = 0; k < n; k++) rows.push({ date, session, block: sessionRaw === 'Abs' ? 'abs' : 'main', exercise, set_no: prior + k + 1, sets: 1, reps: int(fd.get(`reps_${i}`)), weight_kg: num(fd.get(`weight_${i}`)), note: str(fd.get(`note_${i}`)) });
   }
   if (rows.length) {
     const supabase = await createClient();
