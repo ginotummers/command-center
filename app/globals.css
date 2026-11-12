@@ -307,3 +307,19 @@ button.pill { font: inherit; font-weight: 600; cursor: pointer; }
 .pp-zoom-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--ink); font-size: 14px; text-transform: none; }
 @media (max-width: 560px) { .pp-three { grid-template-columns: 1fr 1fr 1fr; gap: 6px; } .pp-pair { gap: 8px; } }
 @media (min-width: 1000px) { .pp-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; } .pp-rows .pp-three { max-width: none; } }
+
+/* Workload */
+.wl-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.wl-tile { display: flex; flex-direction: column; gap: 2px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-sunken); min-width: 0; font-size: 13px; }
+.wl-tile .stat { font-size: 30px; margin: 4px 0 2px; }
+.wl-tile .stat small { font-size: 14px; font-weight: 500; margin-left: 2px; }
+.wl-stack { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; background: var(--surface-sunken); }
+.wl-stack span { display: block; height: 100%; min-width: 3px; }
+.wl-stack span:first-child { border-radius: 999px 0 0 999px; } .wl-stack span:last-child { border-radius: 0 999px 999px 0; }
+.wl-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 13px; }
+.wl-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.wl-week { font-size: 13px; }
+.wl-week th, .wl-week td { text-align: center; padding: 6px 8px; font-variant-numeric: tabular-nums; }
+.wl-week th:first-child, .wl-week td:first-child { text-align: left; }
+.wl-week th.today { color: var(--gold-light); }
+.wl-h4 { margin: 0 0 8px; font-size: 13px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.06em; }

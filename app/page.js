@@ -8,6 +8,7 @@ import SourceIcon from './components/SourceIcon';
 import CopyButton from './components/CopyButton';
 import Suggestions from './components/Suggestions';
 import { setFocus } from './home-actions';
+import Workload, { WorkloadInfo } from './components/Workload';
 import TodayCalendar from './components/TodayCalendar';
 import WishReminder from './components/WishReminder';
 import { WEEKLY, teachingFor, dubaiNow, periods, sectionItems, dueReminder } from '@/lib/wish';
@@ -46,11 +47,12 @@ export default async function Home({ searchParams }) {
   // Your Wish Is Your Command: compact widget + at most one reminder pop-up
   const wNow = dubaiNow();
   const wp = periods(wNow.date);
-  const [{ data: wSet }, { data: wChecks }, { data: wLog }, { data: sugg }] = await Promise.all([
+  const [{ data: wSet }, { data: wChecks }, { data: wLog }, { data: sugg }, { data: wsData }] = await Promise.all([
     supabase.from('wish_settings').select('*').maybeSingle(),
     supabase.from('wish_checks').select('period_type,period_start,item_id').or(`and(period_type.eq.day,period_start.eq.${wp.day}),and(period_type.eq.week,period_start.eq.${wp.week})`),
     supabase.from('wish_reminders').select('kind,period_start,action,snooze_until').in('period_start', [wp.day, wp.week]),
     supabase.from('suggestions').select('id,category,title,body,basis,priority,created_on').eq('status', 'open').order('created_on', { ascending: false }).order('priority').limit(40),
+    supabase.from('work_stats').select('*').gte('date', addDays(weekStart(today), -7)).order('date'),
   ]);
   const wDay = (wChecks || []).filter((c) => c.period_type === 'day').map((c) => c.item_id);
   const wWeek = (wChecks || []).filter((c) => c.period_type === 'week').map((c) => c.item_id);
@@ -284,6 +286,11 @@ export default async function Home({ searchParams }) {
             })}
           </div>
         )}
+      </section>
+
+      <section className="card" id="workload" aria-labelledby="workload-title">
+        <div className="card-head"><h2 id="workload-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>Workload <WorkloadInfo /></h2><span className="muted" style={{ fontSize: 13 }}>Rize vs your Akiflow plan{wsData?.length ? ` · synced ${fmtDate(wsData[wsData.length - 1].date)}` : ''}</span></div>
+        <Workload rows={wsData || []} today={today} />
       </section>
     </>
   );
