@@ -12,15 +12,43 @@ const short = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { da
 const weeksBetween = (a, b) => Math.round((new Date(`${b}T00:00:00Z`) - new Date(`${a}T00:00:00Z`)) / (7 * 86400000));
 const kg = (v) => (v === null || v === undefined ? null : Number(v).toFixed(1).replace(/\.0$/, ''));
 
+function summary(before, after) {
+  const w = weeksBetween(before.date, after.date);
+  const d = before.weight && after.weight ? Number(after.weight) - Number(before.weight) : null;
+  return [
+    `${w} week${w === 1 ? '' : 's'} apart`,
+    d === null ? null : `${d >= 0 ? '+' : '−'}${kg(Math.abs(d))} kg`,
+    before.phase && after.phase && before.phase !== after.phase ? `${PHASE[before.phase]} → ${PHASE[after.phase]}` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+// Rows of front / side / back, one row per set, with date, phase and weight above each row
+function Rows({ rows, Shot }) {
+  return (
+    <div className="pp-rows">
+      {rows.map(([l, s]) => (
+        <div key={l + s.date}><h4>{l} · {fmt(s.date)}<span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>{[s.phase ? PHASE[s.phase] : null, s.weight ? `${kg(s.weight)} kg` : null].filter(Boolean).map((x) => ` · ${x}`).join('')}</span></h4>
+          <div className="pp-three">{POSES.map(([k]) => <Shot key={k} set={s} p={k} label={false} />)}</div></div>
+      ))}
+    </div>
+  );
+}
+
 // sets: [{ date, phase, weight, photos: { front: url, side: url, back: url } }] sorted oldest first
 export default function ProgressPhotos({ userId, today, sets }) {
   const n = sets.length;
-  const [beforeIx, setBeforeIx] = useState(0);
+  // Default comparison: latest vs the photos closest to 8 weeks earlier (or the oldest if there is nothing that old yet)
+  const defIx = useMemo(() => {
+    if (n < 2) return 0;
+    let ix = 0; sets.forEach((s, i) => { if (i < n - 1 && weeksBetween(s.date, sets[n - 1].date) >= 8) ix = i; });
+    return ix;
+  }, [sets, n]);
+  const [beforeIx, setBeforeIx] = useState(defIx);
   const [afterIx, setAfterIx] = useState(Math.max(0, n - 1));
   const [pose, setPose] = useState('front');
   const [zoom, setZoom] = useState(null);
 
-  useEffect(() => { setBeforeIx(0); setAfterIx(Math.max(0, n - 1)); }, [n]);
+  useEffect(() => { setBeforeIx(defIx); setAfterIx(Math.max(0, n - 1)); }, [n, defIx]);
   useEffect(() => {
     if (!zoom) return;
     const onKey = (e) => { if (e.key === 'Escape') setZoom(null); };
@@ -63,22 +91,22 @@ export default function ProgressPhotos({ userId, today, sets }) {
     );
   };
 
-  const diff = before && after && before !== after ? (() => {
-    const w = weeksBetween(before.date, after.date);
-    const d = before.weight && after.weight ? Number(after.weight) - Number(before.weight) : null;
-    return [
-      `${w} week${w === 1 ? '' : 's'} apart`,
-      d === null ? null : `${d >= 0 ? '+' : '−'}${kg(Math.abs(d))} kg`,
-      before.phase && after.phase && before.phase !== after.phase ? `${PHASE[before.phase]} → ${PHASE[after.phase]}` : null,
-    ].filter(Boolean).join(' · ');
-  })() : null;
+  const diff = before && after && before !== after ? summary(before, after) : null;
 
   return (
     <div>
       {n === 0 ? (
-        <p className="empty">No progress photos yet. Add front, side and back below, or send them to Claude.</p>
+        <p className="empty">No progress photos yet. Add front, side and back below.</p>
       ) : (
         <>
+          <Rows rows={n > 1 ? [[`${weeksBetween(sets[defIx].date, sets[n - 1].date)} weeks earlier`, sets[defIx]], ['Latest', sets[n - 1]]] : [['Latest', sets[0]]]} Shot={Shot} />
+          {n > 1 ? <p className="pp-diff" style={{ marginTop: 10 }}>{summary(sets[defIx], sets[n - 1])}</p>
+            : <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>Once you have older photos, this shows your latest next to the photos from about 8 weeks earlier.</p>}
+
+          {n > 1 && (
+            <details className="fold" style={{ marginTop: 16 }}>
+              <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Compare other weeks</span><span className="muted" style={{ fontSize: 13 }}>{n} weeks · timeline</span></summary>
+              <div className="fold-body">
           <div className="pp-controls">
             <div className="seg" role="group" aria-label="Pose">
               {[...POSES, ['all', 'All three']].map(([k, l]) => (
@@ -108,16 +136,10 @@ export default function ProgressPhotos({ userId, today, sets }) {
               {(pose === 'all' ? POSES.map(([k]) => k) : [pose]).map((p) => <Shot key={p} set={after} p={p} label={pose === 'all' ? POSES.find(([k]) => k === p)[1] : undefined} />)}
             </div>
           ) : pose === 'all' ? (
-            <div className="pp-rows">
-              {[['Before', before], ['After', after]].map(([l, s]) => (
-                <div key={l}><h4>{l} · {fmt(s.date)}<span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>{[s.phase ? PHASE[s.phase] : null, s.weight ? `${kg(s.weight)} kg` : null].filter(Boolean).map((x) => ` · ${x}`).join('')}</span></h4>
-                  <div className="pp-three">{POSES.map(([k, pl]) => <Shot key={k} set={s} p={k} label={false} />)}</div></div>
-              ))}
-            </div>
+            <Rows rows={[['Before', before], ['After', after]]} Shot={Shot} />
           ) : (
             <div className="pp-pair"><Shot set={before} p={pose} /><Shot set={after} p={pose} /></div>
           )}
-          {n === 1 && <p className="muted" style={{ fontSize: 13, margin: '8px 0 0' }}>Add next week's photos to start comparing.</p>}
 
           {n > 1 && (
             <>
@@ -137,6 +159,9 @@ export default function ProgressPhotos({ userId, today, sets }) {
                 })}
               </div>
             </>
+          )}
+              </div>
+            </details>
           )}
         </>
       )}

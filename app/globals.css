@@ -306,3 +306,4 @@ button.pill { font: inherit; font-weight: 600; cursor: pointer; }
 .pp-zoom img { max-width: 100%; max-height: calc(92vh - 60px); object-fit: contain; border-radius: 14px; }
 .pp-zoom-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--ink); font-size: 14px; text-transform: none; }
 @media (max-width: 560px) { .pp-three { grid-template-columns: 1fr 1fr 1fr; gap: 6px; } .pp-pair { gap: 8px; } }
+@media (min-width: 1000px) { .pp-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; } .pp-rows .pp-three { max-width: none; } }
