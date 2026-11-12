@@ -385,7 +385,6 @@ export default async function Health() {
         <section className="card narrow" id="daily">
           <div className="card-head"><h2>Daily health</h2><span className="muted">7-day average</span></div>
           <div className="list">
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Steps</span><strong>{avg('steps') ? Math.round(avg('steps')).toLocaleString('en-GB') : '—'}{plan.steps_goal ? <span className="muted" style={{ fontWeight: 400 }}> / {Number(plan.steps_goal).toLocaleString('en-GB')} goal</span> : null}</strong></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Active calories</span><strong>{avg('active_kcal') ? `${Math.round(avg('active_kcal'))} kcal` : '—'}</strong></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sleep</span><strong>{sleep ? `${Math.floor(sleep / 60)} h ${String(Math.round(sleep % 60)).padStart(2, '0')}` : '—'}</strong></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Resting heart rate</span><strong>{avg('resting_hr') ? `${Math.round(avg('resting_hr'))} bpm` : '—'}</strong></div>
@@ -395,7 +394,6 @@ export default async function Health() {
             <form action={addDaily} className="fold-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <label>Date<input type="date" name="date" defaultValue={today} /></label>
               <div className="grid2">
-                <label>Steps<input name="steps" inputMode="numeric" /></label>
                 <label>Active kcal<input name="active_kcal" inputMode="numeric" /></label>
                 <label>Sleep (hours)<input name="sleep_hours" inputMode="decimal" /></label>
                 <label>Resting HR<input name="resting_hr" inputMode="numeric" /></label>
@@ -420,7 +418,6 @@ export default async function Health() {
             <label>Training day kcal<input name="kcal_training" inputMode="numeric" defaultValue={plan.kcal_training ?? ''} /></label>
             <label>Rest day kcal<input name="kcal_rest" inputMode="numeric" defaultValue={plan.kcal_rest ?? ''} /></label>
             <label>Off day kcal<input name="kcal_off" inputMode="numeric" defaultValue={plan.kcal_off ?? ''} /></label>
-            <label>Steps goal<input name="steps_goal" inputMode="numeric" defaultValue={plan.steps_goal ?? ''} /></label>
             <button className="btn" type="submit">Save plan</button>
             <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Training split and meal plan: send Claude the 1FIT screenshots to update them. Calorie targets follow the current meal plan.</span>
           </form>

@@ -40,7 +40,7 @@ export async function savePlan(fd) {
   const phase = PHASES.includes(String(fd.get('phase'))) ? String(fd.get('phase')) : null;
   const { error } = await supabase.from('health_plan').upsert({
     phase, height_cm: num(fd.get('height_cm')), kcal_training: int(fd.get('kcal_training')), kcal_rest: int(fd.get('kcal_rest')),
-    kcal_off: int(fd.get('kcal_off')), steps_goal: int(fd.get('steps_goal')), updated_at: new Date().toISOString(),
+    kcal_off: int(fd.get('kcal_off')), updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' });
   if (error) throw new Error(error.message);
   done('plan');
@@ -77,7 +77,7 @@ export async function addWorkouts(fd) {
 }
 
 export async function addDaily(fd) {
-  const row = { date: str(fd.get('date')) || todayIso(), steps: int(fd.get('steps')), active_kcal: int(fd.get('active_kcal')), sleep_minutes: (() => { const h = num(fd.get('sleep_hours')); return h === null ? null : Math.round(h * 60); })(), resting_hr: int(fd.get('resting_hr')) };
+  const row = { date: str(fd.get('date')) || todayIso(), active_kcal: int(fd.get('active_kcal')), sleep_minutes: (() => { const h = num(fd.get('sleep_hours')); return h === null ? null : Math.round(h * 60); })(), resting_hr: int(fd.get('resting_hr')) };
   const supabase = await createClient();
   const { error } = await supabase.from('health_daily').upsert(row, { onConflict: 'user_id,date' });
   if (error) throw new Error(error.message);
