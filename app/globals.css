@@ -35,7 +35,7 @@ h3 { font-size: 17px; font-weight: 600; }
 .tile { flex: 1 1 220px; }
 .card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 12px; }
 .stat { font-family: var(--font-display), Manrope, sans-serif; font-size: 34px; font-weight: 600; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
-.pos { color: var(--positive); } .neg { color: var(--negative); }
+.pos { color: var(--positive); } .neg { color: var(--negative); } .due { color: var(--gold-light); }
 .list { display: flex; flex-direction: column; }
 .list > * { padding: 12px 0; border-top: 1px solid var(--line); }
 .list > *:first-child { border-top: 0; }

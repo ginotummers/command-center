@@ -46,6 +46,19 @@ function verdict(cur, prev) {
   return { label: w < pw ? `Lighter (−${n1(pw - w)} kg)` : 'Fewer reps', cls: 'neg' };
 }
 const SESSION_ORDER = ['Push v1', 'Pull v1', 'Push v2', 'Legs', 'Pull v2', 'Abs', 'Other'];
+// The goal is to progress each exercise every 2–3 weeks, not every week
+const daysBetween = (a, b) => Math.round((new Date(`${b}T00:00:00Z`) - new Date(`${a}T00:00:00Z`)) / 86400000);
+function rhythm(list) {
+  let since = list[0].date; // date the current level was first reached
+  for (let i = 1; i < list.length; i++) if (verdict(list[i], list[i - 1]).cls === 'pos') since = list[i].date;
+  const cur = list[list.length - 1];
+  if (list.length > 1 && since === cur.date) return { label: 'Progressed', cls: 'pos', rank: 0 };
+  const wk = Math.floor(daysBetween(since, cur.date) / 7);
+  const held = wk < 1 ? 'Just logged' : `Same level ${wk} wk`;
+  if (wk >= 3) return { label: `${held} · overdue`, cls: 'neg', rank: 3 };
+  if (wk >= 2) return { label: `${held} · due now`, cls: 'due', rank: 2 };
+  return { label: `${held} · on track`, cls: 'muted', rank: 1 };
+}
 
 export default async function Health() {
   const supabase = await createClient();
@@ -84,15 +97,17 @@ export default async function Health() {
     return { ...p, sets: [...p.sets].sort((x, y) => (x.set_no ?? 0) - (y.set_no ?? 0)), best, volume };
   });
   // Compare like with like: the same exercise within the same session (Push v1 with last week's Push v1)
-  const exercises = [...new Set(perfs.map((p) => `${p.group}|${p.exercise}`))].map((key) => {
+  // Abs stay in the session history but are not tracked for progression (fixed weight and reps)
+  const exercises = [...new Set(perfs.filter((p) => p.group !== 'Abs').map((p) => `${p.group}|${p.exercise}`))].map((key) => {
     const [, name] = key.split('|');
     const list = perfs.filter((p) => `${p.group}|${p.exercise}` === key).sort((x, y) => x.date.localeCompare(y.date));
     const cur = list[list.length - 1]; const prev = list.length > 1 ? list[list.length - 2] : null;
-    return { key, name, cur, prev, count: list.length, v: verdict(cur, prev) };
+    return { key, name, cur, prev, count: list.length, v: verdict(cur, prev), r: rhythm(list) };
   });
   const groups = SESSION_ORDER.map((g) => ({ g, list: exercises.filter((e) => e.cur.group === g) })).filter((x) => x.list.length);
   const compared = exercises.filter((e) => e.prev);
   const improved = compared.filter((e) => e.v.cls === 'pos').length;
+  const dueCount = exercises.filter((e) => e.r.rank >= 2).length;
   const sessions = [...new Set(wo.map((r) => `${r.date}|${r.session || ''}`))].sort().reverse().map((k) => {
     const [date, session] = k.split('|');
     return { date, session, rows: wo.filter((r) => r.date === date && (r.session || '') === session) };
@@ -185,26 +200,28 @@ export default async function Health() {
         )}
         <p className="muted" style={{ margin: '10px 0 16px', fontSize: 13 }}>Abs on push and pull days. Cardio: {plan.cardio || '—'}</p>
         <div className="card-head" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Progress per exercise</h3>
-          {compared.length > 0 && <span className="muted" style={{ fontSize: 13 }}>{improved} of {compared.length} improved vs the previous session</span>}</div>
+          {compared.length > 0 && <span className="muted" style={{ fontSize: 13 }}>{improved} of {compared.length} up vs last time{dueCount ? <> · <span className="due">{dueCount} due to progress</span></> : ' · none due yet'}</span>}</div>
         {exercises.length === 0 ? <p className="empty">No workouts logged yet. Each exercise will show its latest session against the one before.</p> : (
           <div className="fold-list">
             {groups.map(({ g, list }) => {
               const up = list.filter((e) => e.v.cls === 'pos').length; const withPrev = list.filter((e) => e.prev).length;
+              const due = list.filter((e) => e.r.rank >= 2).length;
               return (
                 <details key={g} className="fold">
                   <summary>
                     <span className="fold-chev" aria-hidden="true">▸</span>
                     <span style={{ flex: 1, fontWeight: 600 }}>{g}{todaySession === g ? <span className="tag" style={{ marginLeft: 8 }}>Today</span> : null}</span>
-                    <span className="muted" style={{ fontSize: 13 }}>{list.length} exercise{list.length === 1 ? '' : 's'}{withPrev ? ` · ${up}/${withPrev} up` : ` · last ${shortD(list[0].cur.date)}`}</span>
+                    <span className="muted" style={{ fontSize: 13 }}>{list.length} exercise{list.length === 1 ? '' : 's'}{withPrev ? ` · ${up}/${withPrev} up` : ` · last ${shortD(list[0].cur.date)}`}{due ? <span className="due">{` · ${due} due`}</span> : null}</span>
                   </summary>
                   <div className="scroll fold-body"><table>
-                    <thead><tr><th>Exercise</th><th>Latest</th><th>Previous</th><th>Progress</th></tr></thead>
+                    <thead><tr><th>Exercise</th><th>Latest</th><th>Previous</th><th>vs last time</th><th>2–3 week goal</th></tr></thead>
                     <tbody>{list.map((e) => (
                       <tr key={e.key}>
                         <td><strong>{e.name}</strong></td>
                         <td>{setsText(e.cur.sets)}<div className="muted" style={{ fontSize: 12 }}>{shortD(e.cur.date)}</div></td>
                         <td>{e.prev ? <>{setsText(e.prev.sets)}<div className="muted" style={{ fontSize: 12 }}>{shortD(e.prev.date)}</div></> : <span className="muted">—</span>}</td>
                         <td className={e.v.cls}><strong>{e.v.label}</strong></td>
+                        <td className={e.r.cls}>{e.r.label}</td>
                       </tr>
                     ))}</tbody>
                   </table></div>
@@ -213,7 +230,7 @@ export default async function Health() {
             })}
           </div>
         )}
-        <p className="muted" style={{ margin: '8px 0 0', fontSize: 12 }}>Sets shown as kg × reps. Progress compares your best set (heaviest, then most reps), then total volume, with the previous time you did the exercise in the same session (e.g. Push v1 with last week's Push v1). Warm-ups are not tracked.</p>
+        <p className="muted" style={{ margin: '8px 0 0', fontSize: 12 }}>Sets shown as kg × reps. Progress compares your best set (heaviest, then most reps), then total volume, with the previous time you did the exercise in the same session (e.g. Push v1 with last week's Push v1). The goal is a step up every 2–3 weeks, so a week at the same level is on track; after 2 weeks it shows as due, after 3 as overdue. Warm-ups and abs are logged but not tracked for progression.</p>
         <details className="fold add-fold" style={{ marginTop: 16 }}>
           <summary><span className="fold-plus" aria-hidden="true">+</span><span style={{ flex: 1, fontWeight: 600 }}>Log a workout</span></summary>
           <form action={addWorkouts} className="fold-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
