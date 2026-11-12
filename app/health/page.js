@@ -64,19 +64,30 @@ export default async function Health() {
   const supabase = await createClient();
   const today = todayIso();
   const weekday = dubaiNow().weekday;
-  const [{ data: bmData }, { data: woData }, { data: dailyData }, { data: planRow }, { data: nutData }] = await Promise.all([
+  const [{ data: bmData }, { data: woData }, { data: dailyData }, { data: planRow }, { data: nutData }, { data: mpData }] = await Promise.all([
     supabase.from('body_metrics').select('*').order('date'),
     supabase.from('workout_entries').select('*').order('date'),
     supabase.from('health_daily').select('*').gte('date', addDays(today, -13)).order('date'),
     supabase.from('health_plan').select('*').maybeSingle(),
     supabase.from('nutrition_log').select('*').gte('date', addDays(today, -59)).order('date'),
+    supabase.from('meal_plans').select('*').order('valid_from', { ascending: false }),
   ]);
+  // Meal plan versions: one set (training / rest / off) per date the coach changed it
+  const mp = mpData || [];
+  const mpDates = [...new Set(mp.map((r) => r.valid_from))];
+  const mpOf = (d, t) => mp.find((r) => r.valid_from === d && r.day_type === t) || null;
+  const curPlanDate = mpDates[0] || null;
   const bm = bmData || []; const wo = woData || []; const daily = dailyData || []; const nut = nutData || [];
   const plan = planRow || {};
   const split = plan.split || {};
   const todaySession = split[String(weekday)] || null;
   const todayType = todaySession && !/rest/i.test(todaySession) ? 'training' : 'rest';
-  const target = { training: plan.kcal_training, rest: plan.kcal_rest, off: plan.kcal_off };
+  // Calorie targets follow the current meal plan when there is one
+  const target = {
+    training: mpOf(curPlanDate, 'training')?.kcal ?? plan.kcal_training,
+    rest: mpOf(curPlanDate, 'rest')?.kcal ?? plan.kcal_rest,
+    off: mpOf(curPlanDate, 'off')?.kcal ?? plan.kcal_off,
+  };
   const latestOf = (k) => [...bm].reverse().find((r) => r[k] !== null && r[k] !== undefined) || null;
   const lw = latestOf('weight_kg'); const lf = latestOf('body_fat_pct'); const lm = latestOf('muscle_mass_kg'); const lb = latestOf('bmi');
   const lastScan = [...bm].reverse().find((r) => r.source === 'inbody' && r.details) || null;
@@ -296,7 +307,53 @@ export default async function Health() {
               <button className="btn" type="submit">Save</button>
             </form>
           </details>
-          {Array.isArray(plan.meals) && plan.meals.length > 0 && (
+          {curPlanDate ? (
+            <>
+              <h3 style={{ margin: '20px 0 8px' }}>Meal plan <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>· from your coach, as of {fmtDate(curPlanDate)}</span></h3>
+              <div className="fold-list">
+                {['training', 'rest', 'off'].map((t) => {
+                  const p = mpOf(curPlanDate, t); if (!p) return null;
+                  return (
+                    <details key={t} className="fold" open={t === todayType}>
+                      <summary><span className="fold-chev" aria-hidden="true">▸</span>
+                        <span style={{ flex: 1, fontWeight: 600 }}>{DAY_TYPE[t]}{t === todayType ? <span className="tag" style={{ marginLeft: 8 }}>Today</span> : null}</span>
+                        <span className="muted" style={{ fontSize: 13 }}>{p.kcal} kcal · P {n1(p.protein)} · C {n1(p.carbs)} · F {n1(p.fat)}</span></summary>
+                      <div className="scroll fold-body"><table>
+                        <thead><tr><th>Food</th><th>Amount</th><th>kcal</th><th>Protein</th><th>Carbs</th><th>Fat</th></tr></thead>
+                        {(p.meals || []).map((m) => (
+                          <tbody key={m.name}>
+                            <tr><td colSpan={6} style={{ fontWeight: 600, color: 'var(--gold-light)' }}>{m.name} <span className="muted" style={{ fontWeight: 400 }}>· {Math.round((m.items || []).reduce((a, i) => a + Number(i.kcal || 0), 0))} kcal</span></td></tr>
+                            {(m.items || []).map((i, ix) => <tr key={ix}><td>{i.food}</td><td className="muted">{i.amount}</td><td>{i.kcal}</td><td>{n1(i.p)} g</td><td>{n1(i.c)} g</td><td>{n1(i.f)} g</td></tr>)}
+                          </tbody>
+                        ))}
+                      </table></div>
+                    </details>
+                  );
+                })}
+                <details className="fold">
+                  <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Plan history</span><span className="muted" style={{ fontSize: 13 }}>{mpDates.length} version{mpDates.length === 1 ? '' : 's'}</span></summary>
+                  <div className="scroll fold-body"><table>
+                    <thead><tr><th>From</th><th>Training day</th><th>Rest day</th><th>Off day</th></tr></thead>
+                    <tbody>{mpDates.map((d, ix) => {
+                      const older = mpDates[ix + 1];
+                      return (
+                        <tr key={d}><td><strong>{fmtDate(d)}</strong>{ix === 0 ? <div className="muted" style={{ fontSize: 12 }}>Current</div> : null}</td>
+                          {['training', 'rest', 'off'].map((t) => {
+                            const p = mpOf(d, t); const o = older ? mpOf(older, t) : null;
+                            if (!p) return <td key={t} className="muted">—</td>;
+                            const dk = o ? p.kcal - o.kcal : 0;
+                            return <td key={t}>{p.kcal} kcal{dk ? <span className={dk > 0 ? 'pos' : 'neg'}> ({dk > 0 ? '+' : '−'}{Math.abs(dk)})</span> : null}<div className="muted" style={{ fontSize: 12 }}>P {n1(p.protein)} · C {n1(p.carbs)} · F {n1(p.fat)}</div></td>;
+                          })}
+                        </tr>
+                      );
+                    })}</tbody>
+                  </table>
+                  {mp[0]?.notes ? <p className="muted" style={{ fontSize: 12, margin: '10px 0 0' }}>Coach's notes: {mp[0].notes}</p> : null}
+                  <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>When your coach changes the plan, send Claude the screenshots and a new version is added here; older versions stay.</p></div>
+                </details>
+              </div>
+            </>
+          ) : Array.isArray(plan.meals) && plan.meals.length > 0 && (
             <details className="fold" style={{ marginTop: 8 }}>
               <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Meal plan</span></summary>
               <div className="fold-body list">
@@ -341,7 +398,7 @@ export default async function Health() {
             <label>Off day kcal<input name="kcal_off" inputMode="numeric" defaultValue={plan.kcal_off ?? ''} /></label>
             <label>Steps goal<input name="steps_goal" inputMode="numeric" defaultValue={plan.steps_goal ?? ''} /></label>
             <button className="btn" type="submit">Save plan</button>
-            <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Training split and meal plan: ask Claude in chat to change them.</span>
+            <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Training split and meal plan: send Claude the 1FIT screenshots to update them. Calorie targets follow the current meal plan.</span>
           </form>
         </details>
       </section>
