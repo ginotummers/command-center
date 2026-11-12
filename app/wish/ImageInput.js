@@ -3,15 +3,16 @@ import { useRef, useState } from 'react';
 import { browserClient } from '@/lib/supabase-browser';
 
 // Shrinks a photo to at most 1800px on its long side as JPEG, so phone photos upload quickly
-export async function shrink(file) {
+// (Re-drawing on a canvas also drops the photo's metadata, such as GPS location.)
+export async function shrink(file, max = 1800, quality = 0.86) {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
   try {
-    const bmp = await createImageBitmap(file);
-    const scale = Math.min(1, 1800 / Math.max(bmp.width, bmp.height));
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
     canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.86));
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', quality));
     return blob || file;
   } catch { return file; }
 }

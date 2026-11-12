@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase';
 import { fmtDate, todayIso, addDays } from '@/lib/util';
 import { dubaiNow } from '@/lib/wish';
 import LineChart from '../components/LineChart';
+import ProgressPhotos from './ProgressPhotos';
 import { addBodyMetric, addWorkouts, addDaily, removeHealthRow, savePlan, logNutrition } from './actions';
 
 export const metadata = { title: 'Health · Personal Operating Center' };
@@ -64,13 +65,15 @@ export default async function Health() {
   const supabase = await createClient();
   const today = todayIso();
   const weekday = dubaiNow().weekday;
-  const [{ data: bmData }, { data: woData }, { data: dailyData }, { data: planRow }, { data: nutData }, { data: mpData }] = await Promise.all([
+  const [{ data: bmData }, { data: woData }, { data: dailyData }, { data: planRow }, { data: nutData }, { data: mpData }, { data: ppData }, { data: { user } }] = await Promise.all([
     supabase.from('body_metrics').select('*').order('date'),
     supabase.from('workout_entries').select('*').order('date'),
     supabase.from('health_daily').select('*').gte('date', addDays(today, -13)).order('date'),
     supabase.from('health_plan').select('*').maybeSingle(),
     supabase.from('nutrition_log').select('*').gte('date', addDays(today, -59)).order('date'),
     supabase.from('meal_plans').select('*').order('valid_from', { ascending: false }),
+    supabase.from('progress_photos').select('date,pose,path').order('date'),
+    supabase.auth.getUser(),
   ]);
   // Meal plan versions: one set (training / rest / off) per date the coach changed it
   const mp = mpData || [];
@@ -79,6 +82,22 @@ export default async function Health() {
   const curPlanDate = mpDates[0] || null;
   const bm = bmData || []; const wo = woData || []; const daily = dailyData || []; const nut = nutData || [];
   const plan = planRow || {};
+
+  // Progress photos grouped per date, with the phase at that time and the nearest weigh-in (within 4 days)
+  const pp = ppData || [];
+  let ppUrls = {};
+  if (pp.length) {
+    const { data: signed } = await supabase.storage.from('progress').createSignedUrls(pp.map((r) => r.path), 3600);
+    (signed || []).forEach((s) => { if (s.signedUrl) ppUrls[s.path] = s.signedUrl; });
+  }
+  const dayDiff = (a, b) => Math.abs(new Date(`${a}T00:00:00Z`) - new Date(`${b}T00:00:00Z`)) / 86400000;
+  const photoSets = [...new Set(pp.map((r) => r.date))].sort().map((date) => {
+    const photos = {};
+    pp.filter((r) => r.date === date).forEach((r) => { photos[r.pose] = ppUrls[r.path] || null; });
+    const phaseRow = [...bm].reverse().find((r) => r.date <= date && r.phase);
+    const near = bm.filter((r) => r.weight_kg !== null && dayDiff(r.date, date) <= 4).sort((a, b) => dayDiff(a.date, date) - dayDiff(b.date, date))[0];
+    return { date, photos, phase: phaseRow?.phase || plan.phase || null, weight: near ? Number(near.weight_kg) : null };
+  });
   const split = plan.split || {};
   const todaySession = split[String(weekday)] || null;
   const todayType = todaySession && !/rest/i.test(todaySession) ? 'training' : 'rest';
@@ -386,6 +405,11 @@ export default async function Health() {
           </details>
         </section>
       </div>
+
+      <section className="card" id="progress">
+        <div className="card-head"><h2>Progress photos</h2><span className="muted" style={{ fontSize: 13 }}>{photoSets.length ? `${photoSets.length} week${photoSets.length === 1 ? '' : 's'} · latest ${fmtDate(photoSets[photoSets.length - 1].date)}` : 'Front, side and back, once a week'}</span></div>
+        <ProgressPhotos userId={user?.id} today={today} sets={photoSets} />
+      </section>
 
       <section className="card" id="plan">
         <details className="block-fold">

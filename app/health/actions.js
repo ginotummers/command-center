@@ -92,3 +92,34 @@ export async function removeHealthRow(fd) {
   if (error) throw new Error(error.message);
   done(String(fd.get('anchor') || ''));
 }
+
+// ---------- Progress photos (front / side / back per date, private storage bucket "progress") ----------
+const POSES = ['front', 'side', 'back'];
+const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+
+// Called from the upload form after the shrunk photos are in storage; replaces an older photo of the same pose and date
+export async function saveProgressPhotos(date, items) {
+  if (!isDate(date) || !Array.isArray(items)) throw new Error('Invalid');
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not signed in');
+  const clean = items.filter((i) => POSES.includes(i?.pose) && typeof i?.path === 'string' && i.path.startsWith(`${user.id}/`));
+  if (!clean.length) return { ok: false };
+  const { data: old } = await supabase.from('progress_photos').select('path,pose').eq('date', date).in('pose', clean.map((i) => i.pose));
+  const { error } = await supabase.from('progress_photos').upsert(clean.map((i) => ({ date, pose: i.pose, path: i.path })), { onConflict: 'user_id,date,pose' });
+  if (error) throw new Error(error.message);
+  const stale = (old || []).map((o) => o.path).filter((p) => !clean.some((i) => i.path === p));
+  if (stale.length) await supabase.storage.from('progress').remove(stale);
+  revalidatePath('/health');
+  return { ok: true };
+}
+
+export async function removeProgressSet(fd) {
+  const date = String(fd.get('date'));
+  if (!isDate(date)) throw new Error('Invalid date');
+  const supabase = await createClient();
+  const { data: rows } = await supabase.from('progress_photos').select('path').eq('date', date);
+  await supabase.from('progress_photos').delete().eq('date', date);
+  if (rows?.length) await supabase.storage.from('progress').remove(rows.map((r) => r.path));
+  done('progress');
+}
