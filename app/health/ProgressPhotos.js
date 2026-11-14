@@ -193,6 +193,9 @@ function Upload({ userId, today, sets }) {
   const exists = sets.find((s) => s.date === date);
 
   const save = async () => {
+    // Replacing photos is easy to do by accident when the date is left on today, so confirm first
+    const replacing = chosen.filter(([p]) => exists?.photos?.[p]).map(([, l]) => l.toLowerCase());
+    if (replacing.length && !window.confirm(`You already have ${replacing.join(', ')} photos for ${fmt(date)}. Replace them?\n\nUploading older photos? Cancel and change the date first.`)) return;
     setState('saving'); setErr('');
     try {
       const sb = browserClient(); const items = [];
@@ -204,7 +207,7 @@ function Upload({ userId, today, sets }) {
         items.push({ pose: p, path });
       }
       await saveProgressPhotos(date, items);
-      setFiles({}); setState('done'); router.refresh();
+      setFiles({}); setState('done'); setDate(today); router.refresh();
     } catch (e) { setErr(e?.message || 'Upload failed'); setState('error'); }
   };
 
@@ -227,7 +230,7 @@ function Upload({ userId, today, sets }) {
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <button type="button" className="btn" disabled={!chosen.length || state === 'saving'} onClick={save}>{state === 'saving' ? 'Uploading…' : `Save ${chosen.length || ''} photo${chosen.length === 1 ? '' : 's'}`}</button>
-          {exists && <span className="muted" style={{ fontSize: 12 }}>Photos for {fmt(date)} already exist; the ones you pick replace them.</span>}
+          {exists && <span className="neg" style={{ fontSize: 12 }}>{fmt(date)} already has photos; saving replaces them. Uploading older photos? Change the date first.</span>}
           {state === 'done' && <span className="pos" style={{ fontSize: 13 }} aria-live="polite">Saved.</span>}
           {state === 'error' && <span className="neg" style={{ fontSize: 13 }} role="alert">{err}</span>}
         </div>
