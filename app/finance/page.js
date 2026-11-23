@@ -284,6 +284,12 @@ export default async function Money({ searchParams }) {
           </h1>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
+          {isPersonal && (
+            <div className="seg small" role="tablist" aria-label="Finance view">
+              <a role="tab" aria-selected="true" className="on" href={`/finance?m=${ym}`}>Overview</a>
+              <a role="tab" aria-selected="false" href={`/finance/statements?m=${ym}`}>Statements</a>
+            </div>
+          )}
           <div className="seg" role="tablist" aria-label="Personal or business">
             <a role="tab" aria-selected={isPersonal} className={isPersonal ? 'on' : ''} href={`/finance?m=${ym}`}>Personal</a>
             <a role="tab" aria-selected={!isPersonal} className={!isPersonal ? 'on' : ''} href={`/finance?m=${ym}&scope=business`}>Business</a>
