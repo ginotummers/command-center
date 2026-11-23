@@ -90,6 +90,7 @@ function parseChoice(value) {
   const v = String(value || '');
   if (v === 'transfer') return { kind: 'transfer', category: null };
   if (v === 'income') return { kind: 'income', category: 'Income' };
+  if (v.startsWith('business:')) return { kind: 'business', category: v.slice(9) || 'My business' };
   if (v.startsWith('set_aside:')) return { kind: 'set_aside', category: v.slice(10) || 'Savings' };
   if (v.startsWith('cat:')) { const c = v.slice(4).trim().slice(0, 40); if (c) return { kind: 'spend', category: c }; }
   return null;

@@ -64,6 +64,17 @@ export default async function Statements({ searchParams }) {
   const saved = -sum(mRows.filter((r) => r.kind === 'set_aside'), (r) => Number(r.eur));
   const savedSplit = ['Savings', 'Investing'].map((c) => [c, -sum(mRows.filter((r) => r.kind === 'set_aside' && (r.category || 'Savings') === c), (r) => Number(r.eur))]).filter(([, v]) => Math.abs(v) >= 1);
   const moved = sum(mRows.filter((r) => r.kind === 'transfer' && r.eur < 0), (r) => -Number(r.eur));
+  // Money between Gino and his own companies: not income, not spending
+  const bizIn = sum(mRows.filter((r) => r.kind === 'business' && r.eur > 0), (r) => Number(r.eur));
+  const bizOut = -sum(mRows.filter((r) => r.kind === 'business' && r.eur < 0), (r) => Number(r.eur));
+  const yStart = `${month.slice(0, 4)}-01-01`;
+  const bizRows = rows.filter((r) => r.kind === 'business');
+  const bizTable = [...new Set(bizRows.map((r) => r.category || 'My business'))].sort().map((b) => {
+    const of = (rs) => rs.filter((r) => (r.category || 'My business') === b);
+    const m = of(mRows.filter((r) => r.kind === 'business')); const y = of(bizRows.filter((r) => r.date >= yStart && r.date <= mEnd));
+    const io = (rs) => [sum(rs.filter((r) => r.eur < 0), (r) => -Number(r.eur)), sum(rs.filter((r) => r.eur > 0), (r) => Number(r.eur))];
+    return { b, m: io(m), y: io(y) };
+  });
 
   // Budget vs actual (budgets are the personal expenses entered on the Finance page)
   const budget = new Map(); (expenses || []).forEach((e) => { const k = String(e.category || 'other').toLowerCase(); budget.set(k, (budget.get(k) || 0) + Number(e.amount)); });
@@ -123,10 +134,13 @@ export default async function Statements({ searchParams }) {
   // Money flow (Sankey): sources on the left, uses on the right
   const left = [];
   (() => { const m = new Map(); mRows.filter((r) => r.kind === 'income').forEach((r) => m.set(r.category || 'Income', (m.get(r.category || 'Income') || 0) + Number(r.eur))); [...m.entries()].sort((a, b) => b[1] - a[1]).forEach(([k, v]) => v > 0 && left.push({ name: k === 'Other income' ? 'Other income' : k, v })); })();
-  const outflow = Math.max(0, spent) + Math.max(0, saved);
-  if (outflow > income + 1) left.push({ name: 'From your balance', v: outflow - income, muted: true });
+  if (bizIn > 0) left.push({ name: 'From my businesses', v: bizIn });
+  const inflow = income + bizIn;
+  const outflow = Math.max(0, spent) + Math.max(0, saved) + bizOut;
+  if (outflow > inflow + 1) left.push({ name: 'From your balance', v: outflow - inflow, muted: true });
   const right = [{ name: 'Spent', v: Math.max(0, spent), color: C[0] }, { name: 'Saved & invested', v: Math.max(0, saved), color: C[1] }];
-  if (income > outflow + 1) right.push({ name: 'Left over', v: income - outflow, color: NEUTRAL });
+  if (bizOut > 0) right.push({ name: 'To my businesses', v: bizOut, color: C[3] });
+  if (inflow > outflow + 1) right.push({ name: 'Left over', v: inflow - outflow, color: NEUTRAL });
 
   const review = reviewAll || [];
   const reviewMonth = review.filter((r) => r.date >= month && r.date <= mEnd);
@@ -154,6 +168,7 @@ export default async function Statements({ searchParams }) {
                 <li><strong>Spent</strong>: card payments, bills, transfers to other people. Refunds reduce it.</li>
                 <li><strong>Saved &amp; invested</strong>: money into vaults and investments (minus anything you took back out).</li>
                 <li><strong>Moved between my accounts</strong>: Wio ↔ Revolut transfers, top-ups and currency exchanges. Never counted as spending.</li>
+                <li><strong>My businesses</strong>: money to or from T Ventures, Promenado FZCO and Promenado LLC. Neither spending nor income; shown in its own section.</li>
                 <li>All amounts are converted to EUR at the ECB rate of that month.</li>
                 <li><strong>Cost per day</strong> uses your stays log and leaves out Travel (flights and hotels), which you usually pay before the trip.</li>
               </ul>
@@ -247,6 +262,24 @@ export default async function Statements({ searchParams }) {
           <div className="st-tile"><span className="muted">Income</span><strong className="stat">{eur(income)}</strong>
             <span className="muted">{income ? `${Math.round(((income - spent) / income) * 100)}% not spent` : 'No income in these statements'}</span></div>
         </div>
+
+        {bizTable.length > 0 && (
+          <section className="card">
+            <details className="fold" open={bizIn + bizOut > 0}>
+              <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Between me and my businesses</span>
+                <span className="muted" style={{ fontSize: 13 }}>{bizIn + bizOut > 0 ? `${monthLabel(month).split(' ')[0]}: ${bizOut ? `${eur(bizOut)} to` : ''}${bizOut && bizIn ? ' · ' : ''}${bizIn ? `${eur(bizIn)} from` : ''}` : `nothing in ${monthLabel(month).split(' ')[0]}`}</span></summary>
+              <div className="fold-body">
+                <div className="scroll"><table>
+                  <thead><tr><th>Business</th><th className="num">To it · {monthLabel(month).split(' ')[0]}</th><th className="num">From it · {monthLabel(month).split(' ')[0]}</th><th className="num">To it · {month.slice(0, 4)}</th><th className="num">From it · {month.slice(0, 4)}</th><th className="num">Net {month.slice(0, 4)}</th></tr></thead>
+                  <tbody>{bizTable.map((x) => { const net = x.y[1] - x.y[0]; return (
+                    <tr key={x.b}><td><strong>{x.b}</strong></td><td className="num">{x.m[0] ? eur(x.m[0]) : '—'}</td><td className="num">{x.m[1] ? eur(x.m[1]) : '—'}</td><td className="num">{x.y[0] ? eur(x.y[0]) : '—'}</td><td className="num">{x.y[1] ? eur(x.y[1]) : '—'}</td>
+                      <td className={`num ${net >= 0 ? 'pos' : 'neg'}`}>{net >= 0 ? '+' : '−'}{eur(Math.abs(net))}</td></tr>); })}</tbody>
+                </table></div>
+                <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>Money to your companies (T Ventures, Promenado FZCO, Promenado LLC) is not counted as spending, and money from them is not counted as income or salary: it stays within your own world. Net = what came back to you minus what you put in.</p>
+              </div>
+            </details>
+          </section>
+        )}
 
         <div className="chart-grid">
           <section className="card">
