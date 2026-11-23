@@ -323,3 +323,15 @@ button.pill { font: inherit; font-weight: 600; cursor: pointer; }
 .wl-week th:first-child, .wl-week td:first-child { text-align: left; }
 .wl-week th.today { color: var(--gold-light); }
 .wl-h4 { margin: 0 0 8px; font-size: 13px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* Manifesting: practice steps fold and recommendations */
+.wish-item { flex-wrap: wrap; }
+.wish-steps { flex-basis: 100%; margin: 4px 0 0 34px; font-size: 14px; }
+.wish-steps summary { cursor: pointer; color: var(--gold-light); font-size: 13px; font-weight: 600; padding: 4px 0; }
+.wish-steps ol { margin: 6px 0 4px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.45; }
+.wish-steps.inner { margin: 8px 0 0; }
+.wish-steps li.hl { color: var(--ink); } .wish-steps.inner li:not(.hl) { color: var(--ink-muted); }
+.rec-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+.rec-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rec-list li { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--line); }
+.rec-list li:first-child { border-top: 0; }

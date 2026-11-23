@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useTransition } from 'react';
 import { toggleCheck } from './actions';
+import { PRACTICE_STEPS, FORMULA } from '@/lib/wish';
 
 const SOURCE_LABEL = { tracker: 'Master Reference', formula: 'Master Reference', personal: 'My routine' };
 
@@ -18,6 +19,17 @@ function Item({ item, checked, onToggle, pending }) {
         {item.note ? <span className="wish-note">{item.note}</span> : null}
       </label>
       {item.link === 'board' && <a className="wish-jump" href="/wish?tab=dreams#board">Vision Board →</a>}
+      {item.practice && (
+        <details className="wish-steps">
+          <summary>Show the steps</summary>
+          <ol>{PRACTICE_STEPS.map(([t, d]) => <li key={t}><strong>{t}.</strong> {d}</li>)}</ol>
+          <details className="wish-steps inner">
+            <summary>The full Manifesting Formula (Master Reference, Section 7)</summary>
+            <ol>{FORMULA.map(([t, d], i) => <li key={t} className={i >= 7 && i <= 9 ? 'hl' : ''}><strong>{t}.</strong> {d}</li>)}</ol>
+            <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>Steps 1–7 you set up once (on paper). Steps 8–10 are this daily practice; 11–12 are what you keep doing.</p>
+          </details>
+        </details>
+      )}
     </li>
   );
 }

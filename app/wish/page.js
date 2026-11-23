@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase';
 import { addDays, fmtDate } from '@/lib/util';
-import { SECTIONS, DAILY, WEEKLY, TEACHINGS, teachingFor, DEFAULT_SETTINGS, WEEKDAYS, dubaiNow, periods, sectionItems } from '@/lib/wish';
+import { SECTIONS, DAILY, WEEKLY, RECOMMENDATIONS, TEACHINGS, teachingFor, DEFAULT_SETTINGS, WEEKDAYS, dubaiNow, periods, sectionItems } from '@/lib/wish';
 import Checklist from './Checklist';
 import PdfReader from './PdfReader';
 import VisionCanvas from './VisionCanvas';
@@ -12,6 +12,7 @@ const TABS = [
   ['overview', 'Overview'],
   ['daily', 'Daily Practices'],
   ['weekly', 'Weekly Practices'],
+  ['habits', 'Recommendations'],
   ['dreams', 'Vision Board'],
   ['reference', 'Master Reference'],
 ];
@@ -185,7 +186,7 @@ export default async function WishPage({ searchParams }) {
               initialChecked={weekIds}
               sections={[{ id: 'weekly', title: 'This week', blurb: 'Resets on Monday.', items: WEEKLY, defaultOpen: true }]}
             />
-            <p className="muted" style={{ margin: '16px 0 0', fontSize: 12 }}>These five items are your personal weekly tracker from the Master Reference. The book recommends dream building and associating with successful people; doing them weekly is your chosen habit, not a schedule Kevin Trudeau prescribes.</p>
+            <p className="muted" style={{ margin: '16px 0 0', fontSize: 12 }}>These are your weekly musts. Other good habits are under Recommendations, without a checkbox. The book recommends dream building and associating with successful people; doing them weekly is your chosen habit, not a schedule Kevin Trudeau prescribes.</p>
           </section>
           <section className="card">
             <div className="card-head"><h3>Previous weeks</h3></div>
@@ -197,6 +198,21 @@ export default async function WishPage({ searchParams }) {
             </div>
           </section>
         </>
+      )}
+
+      {tab === 'habits' && (
+        <section className="card">
+          <div className="card-head"><h2>Recommendations</h2><span className="muted" style={{ fontSize: 13 }}>Good habits from the Master Reference · no checkbox</span></div>
+          <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>Not daily musts. Keep them in mind and use them when they fit.</p>
+          <div className="rec-groups">
+            {RECOMMENDATIONS.map((g) => (
+              <div key={g.group}>
+                <h3 className="wl-h4">{g.group}</h3>
+                <ul className="rec-list">{g.items.map((r) => <li key={r.text}><span>{r.text}</span><span className="muted" style={{ fontSize: 12 }}>{r.ref}</span></li>)}</ul>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {tab === 'dreams' && (
