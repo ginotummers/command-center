@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase';
 import { addDays, fmtDate } from '@/lib/util';
-import { SECTIONS, DAILY, WEEKLY, RECOMMENDATIONS, TEACHINGS, teachingFor, DEFAULT_SETTINGS, WEEKDAYS, dubaiNow, periods, sectionItems } from '@/lib/wish';
+import { SECTIONS, DAILY, WEEKLY, RECOMMENDATIONS, CHEAT_SHEET, TEACHINGS, teachingFor, DEFAULT_SETTINGS, WEEKDAYS, dubaiNow, periods, sectionItems } from '@/lib/wish';
 import Checklist from './Checklist';
 import PdfReader from './PdfReader';
 import VisionCanvas from './VisionCanvas';
@@ -15,6 +15,7 @@ const TABS = [
   ['habits', 'Recommendations'],
   ['dreams', 'Vision Board'],
   ['reference', 'Master Reference'],
+  ['formula', 'Formula'],
 ];
 
 const shortDay = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -212,6 +213,29 @@ export default async function WishPage({ searchParams }) {
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {tab === 'formula' && (
+        <section className="card">
+          <div className="card-head"><h2>The Manifesting Formula</h2><span className="muted" style={{ fontSize: 13 }}>Your cheat sheet · from the Master Reference</span></div>
+          <p className="muted" style={{ margin: '0 0 16px', fontSize: 14 }}>Set it up once on paper, practise steps 8–10 every day, and keep doing 11–12.</p>
+          <div className="formula">
+            {CHEAT_SHEET.map((ph) => (
+              <div key={ph.phase} className="formula-phase">
+                <h3>{ph.phase} <span className="muted">· {ph.blurb}</span></h3>
+                <ol className="formula-steps" start={ph.steps[0].n}>
+                  {ph.steps.map((st) => (
+                    <li key={st.n}>
+                      <strong>{st.title}</strong> <span className="muted" style={{ fontSize: 12 }}>{st.ref}</span>
+                      <ul>{st.points.map((pt) => <li key={pt}>{pt}</li>)}</ul>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ))}
+          </div>
+          <p className="muted" style={{ margin: '16px 0 0', fontSize: 12 }}>Paraphrased from the Master Reference. The book's claims about brainwaves and frequency are the author's, not established science.</p>
         </section>
       )}
 

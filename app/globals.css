@@ -335,3 +335,9 @@ button.pill { font: inherit; font-weight: 600; cursor: pointer; }
 .rec-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .rec-list li { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--line); }
 .rec-list li:first-child { border-top: 0; }
+.formula { display: flex; flex-direction: column; gap: 24px; }
+.formula-phase h3 { margin: 0 0 10px; font-size: 16px; color: var(--gold-light); }
+.formula-phase h3 .muted { font-size: 13px; font-weight: 400; }
+.formula-steps { margin: 0; padding-left: 24px; display: flex; flex-direction: column; gap: 14px; }
+.formula-steps > li::marker { color: var(--gold-light); font-weight: 700; }
+.formula-steps ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.45; }
