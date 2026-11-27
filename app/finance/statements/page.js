@@ -245,7 +245,7 @@ export default async function Statements({ searchParams }) {
                 {reviewMonth.length > 6 && <p className="muted" style={{ fontSize: 12, margin: 0 }}>{reviewMonth.length - 6} more in “All transactions” below.</p>}
               </div>
             ) : <p className="muted" style={{ margin: 0, fontSize: 13 }}>{has ? 'All labelled. Change any label under “All transactions”.' : 'Nothing uploaded for this month yet.'}</p>}
-            {reviewOther > 0 && <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>{reviewOther} to review in other months.{' '}{(() => { const m = review.find((r) => !(r.date >= month && r.date <= mEnd)); return m ? <a href={href({ m: m.date.slice(0, 7) })}>Go to {monthLabel(`${m.date.slice(0, 7)}-01`)}</a> : null; })()}</p>}
+            {reviewOther > 0 && <p style={{ fontSize: 13, margin: '8px 0 0' }}><strong className="neg">{reviewOther} to review in other months.</strong>{' '}{(() => { const m = review.find((r) => !(r.date >= month && r.date <= mEnd)); return m ? <a href={href({ m: m.date.slice(0, 7) })}>Go to {monthLabel(`${m.date.slice(0, 7)}-01`)}</a> : null; })()}</p>}
           </div>
         </div>
       </section>
