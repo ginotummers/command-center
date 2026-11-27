@@ -268,6 +268,7 @@ export default async function Money({ searchParams }) {
               <ol>
                 <li>Use <strong>Copy from last month</strong> to bring over recurring income and expenses, then adjust what changed.</li>
                 <li>Invest your {eur(Number(fin?.plan_invest ?? 2000))} and keep {eur(Number(fin?.plan_buffer ?? 500))} as cash buffer.</li>
+                <li>In <strong>Statements</strong>: upload last month's Revolut and Wio PDFs, log where you were, and check the few new labels. Then compare Really spent with your budget.</li>
                 <li>Read the insights at the bottom of the page.</li>
               </ol>
               <h3>The numbers</h3>

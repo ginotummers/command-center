@@ -279,7 +279,7 @@ export default async function Statements({ searchParams }) {
                 <button className="linkbtn" type="submit" aria-label="Remove stay">×</button>
               </form>
             )) : <p className="muted" style={{ margin: 0, fontSize: 13 }}>Not logged yet for {pLabel}.</p>}
-            <details className="fold" open={!monthStays.length} style={{ marginTop: 8 }}>
+            <details className="fold" style={{ marginTop: 8 }}>
               <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Add a stay</span></summary>
               <form action={addStay} className="fold-body st-stay-form">
                 <input type="hidden" name="m" value={ym} />
