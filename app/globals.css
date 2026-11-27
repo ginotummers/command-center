@@ -387,3 +387,24 @@ button.pill { font: inherit; font-weight: 600; cursor: pointer; }
 .st-tile-parts { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow: auto; }
 .st-tile-part { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
 .st-tile-part > span { min-width: 0; overflow-wrap: anywhere; }
+/* Statements: pop-ups */
+.pop-trigger { all: unset; box-sizing: border-box; cursor: pointer; }
+.pop-trigger:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 6px; }
+button.st-tile-part, button.st-line-btn { display: flex; width: 100%; justify-content: space-between; gap: 10px; border-radius: 8px; padding: 2px 4px; margin: 0 -4px; }
+button.st-tile-part:hover, button.st-line-btn:hover { background: var(--surface-sunken); }
+button.st-tile-part strong, button.st-line-btn strong { white-space: nowrap; }
+.pop { border: 1px solid var(--gold-dark); border-radius: 20px; background: var(--card-bg); color: var(--ink); padding: 0; width: min(560px, calc(100vw - 32px)); max-height: min(80vh, 720px); box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.pop.wide { width: min(820px, calc(100vw - 32px)); }
+.pop::backdrop { background: rgba(0,3,16,.72); }
+.pop-inner { display: flex; flex-direction: column; gap: 12px; padding: 20px; max-height: min(80vh, 720px); box-sizing: border-box; }
+.pop-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.pop-close { all: unset; cursor: pointer; font-size: 26px; line-height: 1; color: var(--ink-muted); padding: 0 4px; }
+.pop-close:hover { color: var(--ink); }
+.pop-list { overflow: auto; display: flex; flex-direction: column; min-height: 0; }
+.pop-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.pop-row:last-child { border-bottom: 0; }
+.globe-btn { font-size: 18px; line-height: 1; padding: 4px 6px; border: 1px solid var(--line); border-radius: 999px; }
+.globe-btn:hover { border-color: var(--gold); }
+.world-map { display: block; background: var(--surface-sunken); border-radius: 14px; flex-shrink: 0; }
+.map-loading { height: 200px; display: grid; place-items: center; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
