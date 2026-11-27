@@ -34,7 +34,7 @@ export default function WorldMap({ countries }) { // [{ code, name, perDay, days
   return (
     <svg viewBox="0 0 720 370" width="100%" role="img" aria-label={`Countries you spent in: ${countries.map((c) => c.name).join(', ')}`} className="world-map">
       {state.paths.map((p) => (
-        <path key={p.k} d={p.d} fill={p.c ? '#4A8FE0' : 'var(--surface-sunken)'} stroke={p.c ? '#9CC4F2' : 'var(--line)'} strokeWidth={p.c ? 0.8 : 0.4}>
+        <path key={p.k} d={p.d} fill={p.c ? '#4A8FE0' : '#2B3A5C'} stroke={p.c ? '#9CC4F2' : '#4E6290'} strokeWidth={p.c ? 0.8 : 0.5}>
           <title>{p.c ? `${p.c.name}: €${Math.round(p.c.perDay)}/day over ${p.c.days} days` : p.name}</title>
         </path>
       ))}

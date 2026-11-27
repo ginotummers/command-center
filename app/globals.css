@@ -405,6 +405,6 @@ button.st-tile-part strong, button.st-line-btn strong { white-space: nowrap; }
 .pop-row:last-child { border-bottom: 0; }
 .globe-btn { font-size: 18px; line-height: 1; padding: 4px 6px; border: 1px solid var(--line); border-radius: 999px; }
 .globe-btn:hover { border-color: var(--gold); }
-.world-map { display: block; background: var(--surface-sunken); border-radius: 14px; flex-shrink: 0; }
+.world-map { display: block; background: #0B1428; border-radius: 14px; flex-shrink: 0; }
 .map-loading { height: 200px; display: grid; place-items: center; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
