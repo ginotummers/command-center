@@ -111,12 +111,13 @@ export async function setLabel(id, value, newName) {
     choice = { kind: 'spend', category: nice };
   }
   if (!choice) throw new Error('Unknown label');
-  const { data: t } = await supabase.from('bank_txns').select('id,merchant,category,label_source').eq('id', String(id)).single();
+  const { data: t } = await supabase.from('bank_txns').select('id,merchant,category,label_source,amount').eq('id', String(id)).single();
   if (!t) throw new Error('Not found');
   await supabase.from('bank_txns').update({ ...choice, label_source: 'user', needs_review: false }).eq('id', t.id);
   // Remember it for this shop, and relabel its other automatically-labelled transactions
   // (shops like Amazon, where every purchase can differ, keep being asked about one by one)
-  if (t.merchant) {
+  // A refund (money back from a shop) is a one-off: don't let its label spread to that shop's purchases
+  if (t.merchant && !(Number(t.amount) > 0 && choice.kind === 'spend')) {
     await supabase.from('merchant_rules').upsert({ merchant: t.merchant, kind: choice.kind, category: choice.category, updated_at: new Date().toISOString() }, { onConflict: 'user_id,merchant' });
     if (t.category !== 'Mixed shopping') {
       await supabase.from('bank_txns').update({ ...choice, label_source: 'rule', needs_review: false })
