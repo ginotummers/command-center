@@ -47,7 +47,7 @@ export async function importStatement({ bank, filename, txns }) {
     const amount = Math.round(Number(t.amount) * 100) / 100;
     const currency = /^[A-Z]{3}$/.test(String(t.currency)) ? String(t.currency) : (BANKS.find((b) => b.id === bank)?.currency || 'EUR');
     const rate = await perEur(t.date.slice(0, 7), currency);
-    const l = labelTxn({ description: t.description, amount, type: t.type, product: t.product, bankCategory: t.bankCategory }, rules);
+    const l = labelTxn({ description: t.description, amount, type: t.type, product: t.product, bankCategory: t.bankCategory, date: t.date }, rules);
     if (l.review && l.category === 'Mixed shopping' && t.date < cut) l.review = false;
     if (l.kind === 'income' && Math.abs(amount / rate) >= 20000) l.review = true; // unusually large: check it is really income
     rows.push({

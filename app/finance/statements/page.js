@@ -80,8 +80,21 @@ export default async function Statements({ searchParams }) {
   // Totals
   const spent = spendOf(mRows);
   const income = sum(mRows.filter((r) => r.kind === 'income'), (r) => Number(r.eur));
-  const saved = -sum(mRows.filter((r) => r.kind === 'set_aside'), (r) => Number(r.eur));
+  // Set aside = pots for bills (rent, yearly costs); saved & invested = real savings and investments
+  const isPot = (r) => r.kind === 'set_aside' && r.category === 'Set aside';
+  const setAside = -sum(mRows.filter(isPot), (r) => Number(r.eur));
+  const saved = -sum(mRows.filter((r) => r.kind === 'set_aside' && !isPot(r)), (r) => Number(r.eur));
   const savedSplit = ['Savings', 'Investing'].map((c) => [c, -sum(mRows.filter((r) => r.kind === 'set_aside' && (r.category || 'Savings') === c), (r) => Number(r.eur))]).filter(([, v]) => Math.abs(v) >= 1);
+  // What each tile is made of
+  const clean = (d) => String(d || '').replace(/\s*\(rate:[^)]*\)/i, '').replace(/^gino jac maria tummers to /i, 'Into ').replace(/ to gino jac maria tummers$/i, ' (taken out)').replace(/\s{2,}/g, ' ').trim();
+  const groupBy = (rs, key) => { const m = new Map(); rs.forEach((r) => { const k = key(r); const g = m.get(k) || { k, v: 0, n: 0 }; g.v += Number(r.eur); g.n += 1; m.set(k, g); }); return [...m.values()].sort((a, b) => Math.abs(b.v) - Math.abs(a.v)); };
+  const tileParts = {
+    spent: groupBy(mRows.filter((r) => r.kind === 'spend'), (r) => r.category || 'Other').map((g) => ({ ...g, v: -g.v })),
+    setAside: groupBy(mRows.filter(isPot), (r) => clean(r.description)).map((g) => ({ ...g, v: -g.v })),
+    saved: groupBy(mRows.filter((r) => r.kind === 'set_aside' && !isPot(r)), (r) => clean(r.description)).map((g) => ({ ...g, v: -g.v })),
+    moved: groupBy(mRows.filter((r) => r.kind === 'transfer' && r.eur < 0), (r) => r.category === 'Pass-through' ? 'Pass-through (paid for someone else)' : clean(r.description)).map((g) => ({ ...g, v: -g.v })),
+    income: mRows.filter((r) => r.kind === 'income').sort((a, b) => b.eur - a.eur).map((r) => ({ k: `${dShort(r.date)} · ${clean(r.description)}`, v: Number(r.eur), n: 1, tag: r.category })),
+  };
   const moved = sum(mRows.filter((r) => r.kind === 'transfer' && r.eur < 0), (r) => -Number(r.eur));
   // Money between Gino and his own companies: not income, not spending
   const bizIn = sum(mRows.filter((r) => r.kind === 'business' && r.eur > 0), (r) => Number(r.eur));
@@ -156,9 +169,9 @@ export default async function Statements({ searchParams }) {
   (() => { const m = new Map(); mRows.filter((r) => r.kind === 'income').forEach((r) => m.set(r.category || 'Income', (m.get(r.category || 'Income') || 0) + Number(r.eur))); [...m.entries()].sort((a, b) => b[1] - a[1]).forEach(([k, v]) => v > 0 && left.push({ name: k === 'Other income' ? 'Other income' : k, v })); })();
   if (bizIn > 0) left.push({ name: 'From my businesses', v: bizIn });
   const inflow = income + bizIn;
-  const outflow = Math.max(0, spent) + Math.max(0, saved) + bizOut;
+  const outflow = Math.max(0, spent) + Math.max(0, setAside) + Math.max(0, saved) + bizOut;
   if (outflow > inflow + 1) left.push({ name: 'From your balance', v: outflow - inflow, muted: true });
-  const right = [{ name: 'Spent', v: Math.max(0, spent), color: C[0] }, { name: 'Saved & invested', v: Math.max(0, saved), color: C[1] }];
+  const right = [{ name: 'Spent', v: Math.max(0, spent), color: C[0] }, { name: 'Set aside', v: Math.max(0, setAside), color: C[2] }, { name: 'Saved & invested', v: Math.max(0, saved), color: C[1] }].filter((n) => n.v > 0.5);
   if (bizOut > 0) right.push({ name: 'To my businesses', v: bizOut, color: C[3] });
   if (inflow > outflow + 1) right.push({ name: 'Left over', v: inflow - outflow, color: NEUTRAL });
 
@@ -186,7 +199,9 @@ export default async function Statements({ searchParams }) {
               <h3>How money is counted</h3>
               <ul>
                 <li><strong>Spent</strong>: card payments, bills, transfers to other people. Refunds reduce it.</li>
-                <li><strong>Saved &amp; invested</strong>: money into vaults and investments (minus anything you took back out).</li>
+                <li><strong>Set aside for bills</strong>: money into pots for rent and yearly costs (Wio spaces, the EUR Rent vault). Not saving: it's already spoken for.</li>
+                <li><strong>Saved &amp; invested</strong>: money into real savings (General Savings) and investments, minus anything you took back out.</li>
+                <li>Tap any tile to see what it's made of.</li>
                 <li><strong>Moved between my accounts</strong>: Wio ↔ Revolut transfers, top-ups and currency exchanges. Never counted as spending.</li>
                 <li><strong>My businesses</strong>: money to or from T Ventures, Promenado FZCO and Promenado LLC. Neither spending nor income; shown in its own section.</li>
                 <li>All amounts are converted to EUR at the ECB rate of that month.</li>
@@ -299,14 +314,11 @@ export default async function Statements({ searchParams }) {
         <section className="card"><p className="empty">No transactions for {pLabel} yet. Upload your Revolut and Wio CSV exports above; a whole year at once is fine.</p></section>
       ) : (<>
         <div className="st-tiles">
-          <div className="st-tile"><span className="muted">Really spent</span><strong className="stat">{eur(spent)}</strong>
-            <span className={budgetTotal ? (spent > budgetTotal ? 'neg' : 'pos') : 'muted'}>{budgetTotal ? `${spent > budgetTotal ? '+' : '−'}${eur(Math.abs(spent - budgetTotal))} vs budget ${eur(budgetTotal)}` : 'No budget entered'}</span></div>
-          <div className="st-tile"><span className="muted">Saved &amp; invested</span><strong className="stat">{eur(saved)}</strong>
-            <span className="muted">{savedSplit.length ? savedSplit.map(([c, v]) => `${c === 'Investing' ? 'invested' : 'vaults'} ${eur(v)}`).join(' · ') : 'Nothing set aside'}</span></div>
-          <div className="st-tile"><span className="muted">Moved between my accounts</span><strong className="stat">{eur(moved)}</strong>
-            <span className="muted">Transfers, top-ups and exchanges; not spending</span></div>
-          <div className="st-tile"><span className="muted">Income</span><strong className="stat">{eur(income)}</strong>
-            <span className="muted">{income ? `${Math.round(((income - spent) / income) * 100)}% not spent` : 'No income in these statements'}</span></div>
+          <Tile label="Really spent" value={spent} parts={tileParts.spent} note={<span className={budgetTotal ? (spent > budgetTotal ? 'neg' : 'pos') : 'muted'}>{budgetTotal ? `${spent > budgetTotal ? '+' : '−'}${eur(Math.abs(spent - budgetTotal))} vs budget ${eur(budgetTotal)}` : 'No budget entered'}</span>} />
+          <Tile label="Set aside for bills" value={setAside} parts={tileParts.setAside} note={<span className="muted">Rent, yearly costs and other pots; not saving</span>} />
+          <Tile label="Saved & invested" value={saved} parts={tileParts.saved} note={<span className="muted">{savedSplit.length ? savedSplit.map(([c, v]) => `${c === 'Investing' ? 'invested' : 'saved'} ${eur(v)}`).join(' · ') : 'Nothing saved or invested'}</span>} />
+          <Tile label="Moved between my accounts" value={moved} parts={tileParts.moved} note={<span className="muted">Transfers, top-ups and exchanges; not spending</span>} />
+          <Tile label="Income" value={income} parts={tileParts.income} note={<span className="muted">{income ? `${Math.round(((income - spent) / income) * 100)}% not spent` : 'No income in these statements'}</span>} />
         </div>
 
         {bizTable.length > 0 && (
@@ -321,6 +333,20 @@ export default async function Statements({ searchParams }) {
                     <tr key={x.b}><td><strong>{x.b}</strong></td><td className="num">{x.m[0] ? eur(x.m[0]) : '—'}</td><td className="num">{x.m[1] ? eur(x.m[1]) : '—'}</td><td className="num">{x.y[0] ? eur(x.y[0]) : '—'}</td><td className="num">{x.y[1] ? eur(x.y[1]) : '—'}</td>
                       <td className={`num ${net >= 0 ? 'pos' : 'neg'}`}>{net >= 0 ? '+' : '−'}{eur(Math.abs(net))}</td></tr>); })}</tbody>
                 </table></div>
+                <div className="list" style={{ marginTop: 10 }}>{bizTable.map((x) => {
+                  const rs = bizRows.filter((r) => (r.category || 'My business') === x.b && r.date >= yStart && r.date <= mEnd).sort((a, b) => b.date.localeCompare(a.date));
+                  return (
+                    <details key={x.b} className="fold">
+                      <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>{x.b} · how it adds up</span><span className="muted" style={{ fontSize: 13 }}>{rs.length} in {month.slice(0, 4)}</span></summary>
+                      <div className="scroll"><table><tbody>{rs.map((r) => (
+                        <tr key={r.id} style={r.date >= pFrom && r.date <= pTo ? null : { opacity: 0.6 }}>
+                          <td className="muted" style={{ whiteSpace: 'nowrap' }}>{dShort(r.date)}</td>
+                          <td>{clean(r.description)}<div className="muted" style={{ fontSize: 12, textTransform: 'capitalize' }}>{r.bank}</div></td>
+                          <td className="num" style={{ whiteSpace: 'nowrap' }}>{r.eur < 0 ? 'to it ' : 'from it '}<strong>{eur(Math.abs(r.eur))}</strong></td>
+                        </tr>))}</tbody></table></div>
+                    </details>);
+                })}</div>
+                {custom ? null : <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>Faded rows are outside {pShort}.</p>}
                 <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>Money to your companies (T Ventures, Promenado FZCO, Promenado LLC) is not counted as spending, and money from them is not counted as income or salary: it stays within your own world. Net = what came back to you minus what you put in.</p>
               </div>
             </details>
@@ -431,11 +457,24 @@ export default async function Statements({ searchParams }) {
   );
 }
 
+// A summary tile you can open to see what it is made of
+function Tile({ label, value, note, parts }) {
+  return (
+    <details className="st-tile st-tile-d">
+      <summary><span className="muted">{label}</span><strong className="stat">{eur(value)}</strong>{note}<span className="st-tile-more" aria-hidden="true">{parts.length ? 'Show what’s in it ▾' : ''}</span></summary>
+      {parts.length > 0 && <div className="st-tile-parts">{parts.slice(0, 25).map((p) => (
+        <div key={p.k} className="st-tile-part"><span>{p.k}{p.n > 1 ? <span className="muted"> · {p.n}×</span> : null}{p.tag ? <span className="muted"> · {p.tag}</span> : null}</span><strong className={p.v < 0 ? 'pos' : ''}>{p.v < 0 ? '−' : ''}{eur(Math.abs(p.v))}</strong></div>))}
+        {parts.length > 25 && <p className="muted" style={{ fontSize: 12, margin: '4px 0 0' }}>+{parts.length - 25} smaller items</p>}
+      </div>}
+    </details>
+  );
+}
+
 // Two-column flow diagram. Left nodes stack on the left, right nodes on the right; bands are allocated in order.
 function Sankey({ left, right }) {
   const total = Math.max(1, ...[left, right].map((n) => n.reduce((a, x) => a + x.v, 0)));
   if (!left.length || !right.length) return <p className="muted">Not enough data for this month.</p>;
-  const W = 560; const H = 260; const gap = 10; const x0 = 110; const x1 = 400; const nw = 12;
+  const W = 590; const H = 260; const gap = 10; const x0 = 150; const x1 = 420; const nw = 12;
   const scale = (H - gap * (Math.max(left.length, right.length) - 1)) / total;
   const place = (nodes) => { let y = 0; return nodes.map((n) => { const h = Math.max(3, n.v * scale); const o = { ...n, y, h, used: 0 }; y += h + gap; return o; }); };
   const L = place(left); const R = place(right);
@@ -449,17 +488,21 @@ function Sankey({ left, right }) {
       if (l.v - l.used <= 0.5) li++;
     }
   }
+  // Label positions: centred on each node, pushed apart so small nodes never overlap or fall off the bottom
+  const spread = (nodes) => { const out = []; nodes.forEach((n, i) => { out.push(Math.max(n.y + n.h / 2, i ? out[i - 1] + 34 : 14)); }); return out; };
+  const ly = spread(L); const ry = spread(R);
+  const VH = Math.max(H + 4, ...ly.map((y) => y + 22), ...ry.map((y) => y + 22));
   return (
-    <svg viewBox={`0 0 ${W} ${H + 4}`} width="100%" role="img" aria-label={`Money in: ${left.map((n) => `${n.name} ${eur(n.v)}`).join(', ')}. Money out: ${right.map((n) => `${n.name} ${eur(n.v)}`).join(', ')}.`}>
+    <svg viewBox={`0 0 ${W} ${VH}`} width="100%" role="img" aria-label={`Money in: ${left.map((n) => `${n.name} ${eur(n.v)}`).join(', ')}. Money out: ${right.map((n) => `${n.name} ${eur(n.v)}`).join(', ')}.`}>
       {bands.map((b, i) => (
         <path key={i} d={`M${x0 + nw} ${b.ly} C${(x0 + x1) / 2} ${b.ly} ${(x0 + x1) / 2} ${b.ry} ${x1} ${b.ry} L${x1} ${b.ry + b.h} C${(x0 + x1) / 2} ${b.ry + b.h} ${(x0 + x1) / 2} ${b.ly + b.h} ${x0 + nw} ${b.ly + b.h}Z`} fill={b.r.color} opacity={b.l.muted ? 0.25 : 0.42}>
           <title>{`${b.l.name} → ${b.r.name}: ${eur(b.v)}`}</title>
         </path>
       ))}
-      {L.map((n) => <g key={n.name}><rect x={x0} y={n.y} width={nw} height={n.h} rx="3" fill={n.muted ? NEUTRAL : '#8FC1A4'}><title>{`${n.name}: ${eur(n.v)}`}</title></rect>
-        <text x={x0 - 8} y={n.y + n.h / 2 - 2} textAnchor="end" fontSize="13" fill="var(--ink)">{n.name}</text><text x={x0 - 8} y={n.y + n.h / 2 + 14} textAnchor="end" fontSize="12" fill="var(--ink-muted)">{eur(n.v)}</text></g>)}
-      {R.map((n) => <g key={n.name}><rect x={x1} y={n.y} width={nw} height={n.h} rx="3" fill={n.color}><title>{`${n.name}: ${eur(n.v)}`}</title></rect>
-        <text x={x1 + nw + 8} y={n.y + n.h / 2 - 2} fontSize="13" fill="var(--ink)">{n.name}</text><text x={x1 + nw + 8} y={n.y + n.h / 2 + 14} fontSize="12" fill="var(--ink-muted)">{eur(n.v)}</text></g>)}
+      {L.map((n, i) => <g key={n.name}><rect x={x0} y={n.y} width={nw} height={n.h} rx="3" fill={n.muted ? NEUTRAL : '#8FC1A4'}><title>{`${n.name}: ${eur(n.v)}`}</title></rect>
+        <text x={x0 - 8} y={ly[i] - 2} textAnchor="end" fontSize="13" fill="var(--ink)">{n.name}</text><text x={x0 - 8} y={ly[i] + 14} textAnchor="end" fontSize="12" fill="var(--ink-muted)">{eur(n.v)}</text></g>)}
+      {R.map((n, i) => <g key={n.name}><rect x={x1} y={n.y} width={nw} height={n.h} rx="3" fill={n.color}><title>{`${n.name}: ${eur(n.v)}`}</title></rect>
+        <text x={x1 + nw + 8} y={ry[i] - 2} fontSize="13" fill="var(--ink)">{n.name}</text><text x={x1 + nw + 8} y={ry[i] + 14} fontSize="12" fill="var(--ink-muted)">{eur(n.v)}</text></g>)}
     </svg>
   );
 }
