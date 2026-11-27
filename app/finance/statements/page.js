@@ -8,6 +8,7 @@ import { addStay, removeStay, removeUpload } from './actions';
 
 export const metadata = { title: 'Statements · Finance' };
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // a full year of statements takes a while to label and save
 
 const C = ['#B08429', '#4A8FE0', '#D0663A', '#8C6FD0']; // validated categorical palette (dark surface)
 const NEUTRAL = '#5E6A85';
@@ -159,7 +160,7 @@ export default async function Statements({ searchParams }) {
               <p>Your Finance overview shows what you <em>plan</em>. Statements shows what <em>actually happened</em>, from the bank exports you upload once a month.</p>
               <h3>Once a month (about 10 minutes)</h3>
               <ol>
-                <li>Export last month as CSV from Revolut and Wio and upload both. Uploading a period twice is fine: duplicates are skipped.</li>
+                <li>Download last month's statement from Revolut and Wio (PDF or CSV) and upload both. Uploading a period twice is fine: duplicates are skipped.</li>
                 <li>Log where you were: from–to dates and a country.</li>
                 <li>Check the few transactions the dashboard wasn't sure about. Change any label at any time; the dashboard remembers your choice for that shop.</li>
               </ol>
@@ -196,7 +197,7 @@ export default async function Statements({ searchParams }) {
             <h3>{steps[0] ? '✓ ' : ''}1 · Upload statements</h3>
             {(uploads || []).slice(0, 3).map((u) => <p key={u.id} className="muted" style={{ margin: '0 0 4px', fontSize: 13 }}><strong style={{ color: 'var(--ink)', textTransform: 'capitalize' }}>{u.bank}</strong> · {u.first_date ? `${dShort(u.first_date)} – ${dLong(u.last_date)}` : ''} · {u.rows_new} new</p>)}
             <details className="fold" open={!(uploads || []).length} style={{ marginTop: 8 }}>
-              <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Upload a CSV</span></summary>
+              <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Upload statements</span></summary>
               <div className="fold-body">
                 <Upload />
                 {(uploads || []).length > 0 && (

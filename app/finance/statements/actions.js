@@ -41,11 +41,15 @@ export async function importStatement({ bank, filename, txns }) {
   }).select('id').single();
   if (upErr) throw new Error(upErr.message);
   const rows = [];
+  // Shops like Amazon are only asked about for the last two months; older ones keep "Mixed shopping"
+  const cutoff = new Date(); cutoff.setUTCMonth(cutoff.getUTCMonth() - 2); const cut = cutoff.toISOString().slice(0, 10);
   for (const t of clean) {
     const amount = Math.round(Number(t.amount) * 100) / 100;
     const currency = /^[A-Z]{3}$/.test(String(t.currency)) ? String(t.currency) : (BANKS.find((b) => b.id === bank)?.currency || 'EUR');
     const rate = await perEur(t.date.slice(0, 7), currency);
     const l = labelTxn({ description: t.description, amount, type: t.type, product: t.product, bankCategory: t.bankCategory }, rules);
+    if (l.review && l.category === 'Mixed shopping' && t.date < cut) l.review = false;
+    if (l.kind === 'income' && Math.abs(amount / rate) >= 20000) l.review = true; // unusually large: check it is really income
     rows.push({
       upload_id: up.id, bank, account: t.product ? String(t.product).slice(0, 60) : null, date: t.date,
       description: String(t.description).slice(0, 300), merchant: l.merchant, amount, currency,
