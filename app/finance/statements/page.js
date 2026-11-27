@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase';
-import { eur, monthStart, shiftMonth, monthLabel, todayIso, lastDayOfMonth } from '@/lib/util';
+import { eur, monthStart, shiftMonth, monthLabel, todayIso, lastDayOfMonth, addDays } from '@/lib/util';
 import { SPEND_CATEGORIES, FIXED_COSTS, BUDGET_OF, KIND_LABEL, countries, flag, countryName } from '@/lib/statements';
 import InfoButton from '../../components/InfoButton';
 import Upload from './Upload';
@@ -39,11 +39,29 @@ export default async function Statements({ searchParams }) {
   const supabase = await createClient();
   const today = todayIso();
   const { data: latest } = await supabase.from('bank_txns').select('date').order('date', { ascending: false }).limit(1);
-  const month = sp?.m ? monthStart(sp.m) : monthStart(latest?.[0]?.date?.slice(0, 7));
-  const ym = month.slice(0, 7); const mEnd = lastDayOfMonth(month);
-  const from = shiftMonth(month, -23);
+  const isD = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+  // A custom period (from–to dates) or a single month
+  const custom = isD(sp?.from) && isD(sp?.to) && sp.from <= sp.to;
+  const pStart = custom ? sp.from : null; const pEndC = custom ? sp.to : null;
+  const month = custom ? monthStart(pEndC.slice(0, 7)) : sp?.m ? monthStart(sp.m) : monthStart(latest?.[0]?.date?.slice(0, 7));
+  const ym = month.slice(0, 7);
+  const pFrom = custom ? pStart : month; const pTo = custom ? pEndC : lastDayOfMonth(month);
+  const mEnd = pTo;
+  const pDays = days(pFrom, pTo);
+  const pMonths = custom ? pDays / 30.4375 : 1; // budgets are monthly: scale them to the period
+  const pLabel = custom ? `${dLong(pFrom)} – ${dLong(pTo)}` : monthLabel(month);
+  const pShort = custom ? `${dShort(pFrom)} – ${dShort(pTo)}` : monthLabel(month).split(' ')[0];
+  const prevFrom = addDays(pFrom, -pDays); const prevTo = addDays(pFrom, -1);
+  const from = [shiftMonth(month, -23), prevFrom].sort()[0];
   const quarters = sp?.q === '1'; const cpdAll = sp?.cpd === 'all'; const cpdFull = sp?.fixed === '1';
-  const href = (extra) => { const p = { m: ym, ...(quarters ? { q: '1' } : {}), ...(cpdAll ? { cpd: 'all' } : {}), ...(cpdFull ? { fixed: '1' } : {}), ...extra }; return `/finance/statements?${Object.entries(p).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join('&')}`; };
+  const href = (extra) => { const p = { ...(custom ? { from: pFrom, to: pTo } : { m: ym }), ...(quarters ? { q: '1' } : {}), ...(cpdAll ? { cpd: 'all' } : {}), ...(cpdFull ? { fixed: '1' } : {}), ...extra }; return `/finance/statements?${Object.entries(p).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join('&')}`; };
+  const monthHref = (m) => href({ m, from: null, to: null });
+  const lastDate = latest?.[0]?.date || today;
+  const presets = [
+    ['Year to date', `${lastDate.slice(0, 4)}-01-01`, lastDate],
+    ['Last 12 months', addDays(shiftMonth(monthStart(lastDate.slice(0, 7)), -11), 0), lastDate],
+    ['Last 3 months', shiftMonth(monthStart(lastDate.slice(0, 7)), -2), lastDate],
+  ];
 
   const [rows, { data: expenses }, { data: stays }, { data: uploads }, { data: labels }, reviewAll] = await Promise.all([
     fetchAll(() => supabase.from('bank_txns').select('id,date,description,merchant,amount,currency,eur,kind,category,needs_review,bank').gte('date', from).lte('date', mEnd).order('date')),
@@ -54,7 +72,7 @@ export default async function Statements({ searchParams }) {
     fetchAll(() => supabase.from('bank_txns').select('id,date,description,amount,currency,eur,kind,category').eq('needs_review', true).order('date', { ascending: false })),
   ]);
   const categories = [...SPEND_CATEGORIES, ...(labels || []).map((l) => l.name).filter((n) => !SPEND_CATEGORIES.includes(n))];
-  const mRows = rows.filter((r) => r.date >= month && r.date <= mEnd);
+  const mRows = rows.filter((r) => r.date >= pFrom && r.date <= pTo);
   const has = mRows.length > 0;
   const prevMonths = [1, 2, 3].map((n) => shiftMonth(month, -n)).filter((m) => rows.some((r) => r.date.startsWith(m.slice(0, 7))));
   const inMonth = (m) => rows.filter((r) => r.date.startsWith(m.slice(0, 7)));
@@ -78,7 +96,7 @@ export default async function Statements({ searchParams }) {
   });
 
   // Budget vs actual (budgets are the personal expenses entered on the Finance page)
-  const budget = new Map(); (expenses || []).forEach((e) => { const k = String(e.category || 'other').toLowerCase(); budget.set(k, (budget.get(k) || 0) + Number(e.amount)); });
+  const budget = new Map(); (expenses || []).forEach((e) => { const k = String(e.category || 'other').toLowerCase(); budget.set(k, (budget.get(k) || 0) + Number(e.amount) * pMonths); });
   const actual = new Map(); const parts = new Map();
   mRows.filter((r) => r.kind === 'spend').forEach((r) => {
     const c = r.category || 'Other'; const k = budget.has(BUDGET_OF[c]) ? BUDGET_OF[c] : budget.has(c.toLowerCase()) ? c.toLowerCase() : c;
@@ -93,20 +111,21 @@ export default async function Statements({ searchParams }) {
 
   // What changed vs the average of up to 3 previous months
   const catOf = (rs) => { const m = new Map(); rs.filter((r) => r.kind === 'spend').forEach((r) => m.set(r.category || 'Other', (m.get(r.category || 'Other') || 0) - Number(r.eur))); return m; };
-  const curCat = catOf(mRows); const prevCats = prevMonths.map((m) => catOf(inMonth(m)));
+  const prevRows = rows.filter((r) => r.date >= prevFrom && r.date <= prevTo);
+  const curCat = catOf(mRows); const prevCats = custom ? (prevRows.length ? [catOf(prevRows)] : []) : prevMonths.map((m) => catOf(inMonth(m)));
   const avgCat = (c) => (prevCats.length ? prevCats.reduce((a, m) => a + (m.get(c) || 0), 0) / prevCats.length : null);
   const changes = prevCats.length ? [...new Set([...curCat.keys(), ...prevCats.flatMap((m) => [...m.keys()])])]
     .map((c) => ({ c, now: curCat.get(c) || 0, avg: avgCat(c) })).map((x) => ({ ...x, d: x.now - x.avg }))
     .filter((x) => Math.abs(x.d) >= 50 && Math.abs(x.d) >= 0.2 * Math.max(x.avg, 1)).sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 4) : [];
   const oneOffs = mRows.filter((r) => r.kind === 'spend' && -r.eur >= 150).sort((a, b) => a.eur - b.eur).slice(0, 3);
-  const seenBefore = new Set(rows.filter((r) => r.date < month).map((r) => r.merchant));
+  const seenBefore = new Set(rows.filter((r) => r.date < pFrom).map((r) => r.merchant));
   const newShops = [...new Map(mRows.filter((r) => r.kind === 'spend' && !seenBefore.has(r.merchant)).map((r) => [r.merchant, r])).keys()]
     .map((m) => ({ m, rs: mRows.filter((r) => r.merchant === m && r.kind === 'spend') })).map((x) => ({ ...x, total: spendOf(x.rs) }))
     .filter((x) => x.total >= 30 && !oneOffs.some((r) => r.merchant === x.m)).sort((a, b) => b.total - a.total).slice(0, 3);
 
   // Cost per day by country (travel bookings left out; they are paid before the trip)
   const stayList = stays || [];
-  const cpdRange = cpdAll ? [from, mEnd] : [month, mEnd];
+  const cpdRange = cpdAll ? [shiftMonth(month, -23), pTo] : [pFrom, pTo];
   const perCountry = new Map(); let covered = 0;
   stayList.forEach((s) => {
     const a = s.start_date > cpdRange[0] ? s.start_date : cpdRange[0]; const b = s.end_date < cpdRange[1] ? s.end_date : cpdRange[1];
@@ -117,7 +136,7 @@ export default async function Statements({ searchParams }) {
   });
   const cpd = [...perCountry.entries()].map(([code, v]) => ({ code, ...v, perDay: v.days ? v.spend / v.days : 0 })).sort((a, b) => b.days - a.days);
   const cpdMax = Math.max(1, ...cpd.map((x) => x.perDay));
-  const monthDays = days(month, mEnd);
+  const monthDays = pDays;
   const travelThisMonth = spendOf(mRows.filter((r) => r.category === 'Travel'));
 
   // Month by month / quarters
@@ -144,9 +163,9 @@ export default async function Statements({ searchParams }) {
   if (inflow > outflow + 1) right.push({ name: 'Left over', v: inflow - outflow, color: NEUTRAL });
 
   const review = reviewAll || [];
-  const reviewMonth = review.filter((r) => r.date >= month && r.date <= mEnd);
+  const reviewMonth = review.filter((r) => r.date >= pFrom && r.date <= pTo);
   const reviewOther = review.length - reviewMonth.length;
-  const monthStays = stayList.filter((s) => s.end_date >= month && s.start_date <= mEnd);
+  const monthStays = stayList.filter((s) => s.end_date >= pFrom && s.start_date <= pTo);
   const countryList = countries();
   const steps = [uploads?.length > 0 && has, monthStays.length > 0, has && reviewMonth.length === 0];
 
@@ -155,7 +174,7 @@ export default async function Statements({ searchParams }) {
       <div className="section-title" style={{ alignItems: 'flex-end' }}>
         <div>
           <p className="overline">Finance · Personal · from your bank statements</p>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: 14 }}>Statements · {monthLabel(month)}
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>Statements · {pLabel}
             <InfoButton title="How Statements works">
               <p>Your Finance overview shows what you <em>plan</em>. Statements shows what <em>actually happened</em>, from the bank exports you upload once a month.</p>
               <h3>Once a month (about 10 minutes)</h3>
@@ -183,15 +202,28 @@ export default async function Statements({ searchParams }) {
             <a role="tab" aria-selected="true" className="on" href={`/finance/statements?m=${ym}`}>Statements</a>
           </div>
           <div className="nav">
-            <a className="pill" href={href({ m: shiftMonth(month, -1).slice(0, 7) })}>← {monthLabel(shiftMonth(month, -1)).split(' ')[0]}</a>
-            <a className="pill" href={href({ m: shiftMonth(month, 1).slice(0, 7) })}>{monthLabel(shiftMonth(month, 1)).split(' ')[0]} →</a>
+            {custom ? <a className="pill" href={monthHref(ym)}>Back to {monthLabel(month)}</a> : <>
+              <a className="pill" href={monthHref(shiftMonth(month, -1).slice(0, 7))}>← {monthLabel(shiftMonth(month, -1)).split(' ')[0]}</a>
+              <a className="pill" href={monthHref(shiftMonth(month, 1).slice(0, 7))}>{monthLabel(shiftMonth(month, 1)).split(' ')[0]} →</a></>}
           </div>
+          <details className="st-range">
+            <summary className="pill">{custom ? 'Change dates' : 'Pick dates'}</summary>
+            <div className="st-range-pop">
+              <form action="/finance/statements" method="get" className="st-range-form">
+                {quarters && <input type="hidden" name="q" value="1" />}{cpdFull && <input type="hidden" name="fixed" value="1" />}
+                <label>From<input type="date" name="from" required defaultValue={pFrom} /></label>
+                <label>To<input type="date" name="to" required defaultValue={pTo} /></label>
+                <button className="btn small" type="submit">Show</button>
+              </form>
+              <div className="st-range-presets">{presets.map(([l, a, b]) => <a key={l} className="chip" href={href({ from: a, to: b, m: null })}>{l}</a>)}</div>
+            </div>
+          </details>
         </div>
       </div>
 
       {/* Monthly check */}
       <section className="card">
-        <div className="card-head"><h2>This month's check</h2><span className="muted" style={{ fontSize: 13 }}>{steps.filter(Boolean).length} of 3 done</span></div>
+        <div className="card-head"><h2>{custom ? 'Check for this period' : "This month's check"}</h2><span className="muted" style={{ fontSize: 13 }}>{steps.filter(Boolean).length} of 3 done</span></div>
         <div className="st-check">
           <div className="st-step">
             <h3>{steps[0] ? '✓ ' : ''}1 · Upload statements</h3>
@@ -216,18 +248,26 @@ export default async function Statements({ searchParams }) {
           </div>
           <div className="st-step">
             <h3>{steps[1] ? '✓ ' : ''}2 · Where were you?</h3>
-            {monthStays.length ? monthStays.map((s) => (
+            {monthStays.length > 3 ? (
+              <details className="fold"><summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>{monthStays.length} stays · {[...new Set(monthStays.map((s) => flag(s.country)))].join(' ')}</span></summary>
+                <div className="fold-body">{monthStays.map((s) => (
+                  <form key={s.id} action={removeStay} className="st-chip">
+                    <input type="hidden" name="id" value={s.id} /><input type="hidden" name="m" value={ym} />
+                    <span>{flag(s.country)} {dLong(s.start_date)} – {dLong(s.end_date)} · {countryName(s.country)}</span>
+                    <button className="linkbtn" type="submit" aria-label="Remove stay">×</button>
+                  </form>))}</div></details>
+            ) : monthStays.length ? monthStays.map((s) => (
               <form key={s.id} action={removeStay} className="st-chip">
                 <input type="hidden" name="id" value={s.id} /><input type="hidden" name="m" value={ym} />
                 <span>{flag(s.country)} {dShort(s.start_date)} – {dShort(s.end_date)} · {countryName(s.country)}</span>
                 <button className="linkbtn" type="submit" aria-label="Remove stay">×</button>
               </form>
-            )) : <p className="muted" style={{ margin: 0, fontSize: 13 }}>Not logged yet for {monthLabel(month)}.</p>}
+            )) : <p className="muted" style={{ margin: 0, fontSize: 13 }}>Not logged yet for {pLabel}.</p>}
             <details className="fold" open={!monthStays.length} style={{ marginTop: 8 }}>
               <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Add a stay</span></summary>
               <form action={addStay} className="fold-body st-stay-form">
                 <input type="hidden" name="m" value={ym} />
-                <label>From<input type="date" name="start_date" required defaultValue={month} /></label>
+                <label>From<input type="date" name="start_date" required defaultValue={pFrom} /></label>
                 <label>To<input type="date" name="end_date" required defaultValue={mEnd} /></label>
                 <label style={{ gridColumn: '1 / -1' }}>Country<select name="country" defaultValue="AE">{countryList.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
                 <button className="btn small" type="submit">Add stay</button>
@@ -235,27 +275,32 @@ export default async function Statements({ searchParams }) {
             </details>
           </div>
           <div className="st-step">
-            <h3>{steps[2] ? '✓ ' : ''}3 · Check labels {reviewMonth.length ? <span className="neg" style={{ fontWeight: 400 }}>· {reviewMonth.length} to review</span> : null}</h3>
-            {reviewMonth.length ? (
-              <div className="list">{reviewMonth.slice(0, 6).map((r) => (
+            <h3>{steps[2] ? '✓ ' : ''}3 · Check labels</h3>
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>{reviewMonth.length ? <strong className="neg">{reviewMonth.length} to review</strong> : has ? 'All labelled.' : 'Nothing uploaded yet.'}</p>
+            {reviewOther > 0 && <p style={{ fontSize: 13, margin: '4px 0 0' }}><strong className="neg">{reviewOther} to review in other months.</strong>{' '}{(() => { const m = review.find((r) => !(r.date >= pFrom && r.date <= pTo)); return m ? <a href={monthHref(m.date.slice(0, 7))}>Go to {monthLabel(`${m.date.slice(0, 7)}-01`)}</a> : null; })()}</p>}
+            {reviewMonth.length > 0 && (
+            <details className="fold" style={{ marginTop: 8 }}>
+              <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Review labels</span></summary>
+              <div className="fold-body">
+              <div className="list">{reviewMonth.slice(0, 12).map((r) => (
                 <div key={r.id} className="st-rev">
                   <span><strong>{r.description}</strong><br /><span className="muted" style={{ fontSize: 12 }}>{dShort(r.date)} · {r.currency} {Math.abs(r.amount).toLocaleString('en-GB')}{r.currency !== 'EUR' ? ` · ${eur(Math.abs(r.eur))}` : ''}{r.amount > 0 ? ' in' : ''}</span></span>
                   <LabelSelect id={r.id} kind={r.kind} category={r.category} categories={categories} review />
                 </div>))}
-                {reviewMonth.length > 6 && <p className="muted" style={{ fontSize: 12, margin: 0 }}>{reviewMonth.length - 6} more in “All transactions” below.</p>}
+                {reviewMonth.length > 12 && <p className="muted" style={{ fontSize: 12, margin: 0 }}>{reviewMonth.length - 12} more in “All transactions” below.</p>}
               </div>
-            ) : <p className="muted" style={{ margin: 0, fontSize: 13 }}>{has ? 'All labelled. Change any label under “All transactions”.' : 'Nothing uploaded for this month yet.'}</p>}
-            {reviewOther > 0 && <p style={{ fontSize: 13, margin: '8px 0 0' }}><strong className="neg">{reviewOther} to review in other months.</strong>{' '}{(() => { const m = review.find((r) => !(r.date >= month && r.date <= mEnd)); return m ? <a href={href({ m: m.date.slice(0, 7) })}>Go to {monthLabel(`${m.date.slice(0, 7)}-01`)}</a> : null; })()}</p>}
+              </div>
+            </details>)}
           </div>
         </div>
       </section>
 
       {!has ? (
-        <section className="card"><p className="empty">No transactions for {monthLabel(month)} yet. Upload your Revolut and Wio CSV exports above; a whole year at once is fine.</p></section>
+        <section className="card"><p className="empty">No transactions for {pLabel} yet. Upload your Revolut and Wio CSV exports above; a whole year at once is fine.</p></section>
       ) : (<>
         <div className="st-tiles">
           <div className="st-tile"><span className="muted">Really spent</span><strong className="stat">{eur(spent)}</strong>
-            <span className={budgetTotal ? (spent > budgetTotal ? 'neg' : 'pos') : 'muted'}>{budgetTotal ? `${spent > budgetTotal ? '+' : '−'}${eur(Math.abs(spent - budgetTotal))} vs budget ${eur(budgetTotal)}` : 'No budget entered for this month'}</span></div>
+            <span className={budgetTotal ? (spent > budgetTotal ? 'neg' : 'pos') : 'muted'}>{budgetTotal ? `${spent > budgetTotal ? '+' : '−'}${eur(Math.abs(spent - budgetTotal))} vs budget ${eur(budgetTotal)}` : 'No budget entered'}</span></div>
           <div className="st-tile"><span className="muted">Saved &amp; invested</span><strong className="stat">{eur(saved)}</strong>
             <span className="muted">{savedSplit.length ? savedSplit.map(([c, v]) => `${c === 'Investing' ? 'invested' : 'vaults'} ${eur(v)}`).join(' · ') : 'Nothing set aside'}</span></div>
           <div className="st-tile"><span className="muted">Moved between my accounts</span><strong className="stat">{eur(moved)}</strong>
@@ -268,10 +313,10 @@ export default async function Statements({ searchParams }) {
           <section className="card">
             <details className="fold" open={bizIn + bizOut > 0}>
               <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>Between me and my businesses</span>
-                <span className="muted" style={{ fontSize: 13 }}>{bizIn + bizOut > 0 ? `${monthLabel(month).split(' ')[0]}: ${bizOut ? `${eur(bizOut)} to` : ''}${bizOut && bizIn ? ' · ' : ''}${bizIn ? `${eur(bizIn)} from` : ''}` : `nothing in ${monthLabel(month).split(' ')[0]}`}</span></summary>
+                <span className="muted" style={{ fontSize: 13 }}>{bizIn + bizOut > 0 ? `${pShort}: ${bizOut ? `${eur(bizOut)} to` : ''}${bizOut && bizIn ? ' · ' : ''}${bizIn ? `${eur(bizIn)} from` : ''}` : `nothing in ${pShort}`}</span></summary>
               <div className="fold-body">
                 <div className="scroll"><table>
-                  <thead><tr><th>Business</th><th className="num">To it · {monthLabel(month).split(' ')[0]}</th><th className="num">From it · {monthLabel(month).split(' ')[0]}</th><th className="num">To it · {month.slice(0, 4)}</th><th className="num">From it · {month.slice(0, 4)}</th><th className="num">Net {month.slice(0, 4)}</th></tr></thead>
+                  <thead><tr><th>Business</th><th className="num">To it · {pShort}</th><th className="num">From it · {pShort}</th><th className="num">To it · {month.slice(0, 4)}</th><th className="num">From it · {month.slice(0, 4)}</th><th className="num">Net {month.slice(0, 4)}</th></tr></thead>
                   <tbody>{bizTable.map((x) => { const net = x.y[1] - x.y[0]; return (
                     <tr key={x.b}><td><strong>{x.b}</strong></td><td className="num">{x.m[0] ? eur(x.m[0]) : '—'}</td><td className="num">{x.m[1] ? eur(x.m[1]) : '—'}</td><td className="num">{x.y[0] ? eur(x.y[0]) : '—'}</td><td className="num">{x.y[1] ? eur(x.y[1]) : '—'}</td>
                       <td className={`num ${net >= 0 ? 'pos' : 'neg'}`}>{net >= 0 ? '+' : '−'}{eur(Math.abs(net))}</td></tr>); })}</tbody>
@@ -284,7 +329,7 @@ export default async function Statements({ searchParams }) {
 
         <div className="chart-grid">
           <section className="card">
-            <div className="card-head"><h2>Where the money went</h2><span className="muted" style={{ fontSize: 13 }}>{monthLabel(month)}</span></div>
+            <div className="card-head"><h2>Where the money went</h2><span className="muted" style={{ fontSize: 13 }}>{pShort}</span></div>
             <Sankey left={left} right={right} />
             <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>Hover a band for the amount. Transfers between your own accounts are left out, so nothing is counted twice.</p>
           </section>
@@ -308,25 +353,25 @@ export default async function Statements({ searchParams }) {
                 );
               })}
             </div>
-            <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>Budgets are your personal expenses for {monthLabel(month)} on the Finance overview. Tap a row to see which labels it includes.</p>
+            <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>{custom ? `Budgets are your monthly personal expenses (${monthLabel(month)}) × ${pMonths.toFixed(1)} months.` : `Budgets are your personal expenses for ${monthLabel(month)} on the Finance overview.`} Tap a row to see which labels it includes.</p>
           </section>
         </div>
 
         <div className="chart-grid">
           <section className="card">
-            <div className="card-head"><h2>What changed</h2><span className="muted" style={{ fontSize: 13 }}>{prevMonths.length ? `vs your ${prevMonths.length}-month average` : 'needs an earlier month to compare'}</span></div>
+            <div className="card-head"><h2>What changed</h2><span className="muted" style={{ fontSize: 13 }}>{custom ? (prevCats.length ? `vs the ${pDays} days before` : 'needs an earlier period to compare') : prevMonths.length ? `vs your ${prevMonths.length}-month average` : 'needs an earlier month to compare'}</span></div>
             <div className="list">
               {changes.map((x) => <div key={x.c} className="st-line"><span className={x.d > 0 ? 'neg' : 'pos'} aria-hidden="true">{x.d > 0 ? '▲' : '▼'}</span><span>{x.c} <strong>{eur(x.now)}</strong>, {x.d > 0 ? 'up' : 'down'} {eur(Math.abs(x.d))} (usually about {eur(x.avg)})</span></div>)}
               {oneOffs.map((r) => <div key={r.id} className="st-line"><span className="muted" aria-hidden="true">•</span><span>Big purchase: <strong>{r.description}</strong> {eur(-r.eur)} <span className="muted">({r.category}, {dShort(r.date)})</span></span></div>)}
               {newShops.map((x) => <div key={x.m} className="st-line"><span className="muted" aria-hidden="true">•</span><span>New: <strong>{pretty(x.rs)}</strong> {eur(x.total)}{x.rs.length > 1 ? ` (${x.rs.length}×)` : ''}</span></div>)}
-              {!changes.length && !oneOffs.length && !newShops.length && <p className="muted" style={{ margin: 0 }}>Nothing unusual this month.</p>}
+              {!changes.length && !oneOffs.length && !newShops.length && <p className="muted" style={{ margin: 0 }}>Nothing unusual in this period.</p>}
             </div>
           </section>
           <section className="card">
             <div className="card-head"><h2>Cost per day by country</h2>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <div className="seg small"><a className={!cpdFull ? 'on' : ''} href={href({ fixed: null })}>Day-to-day</a><a className={cpdFull ? 'on' : ''} href={href({ fixed: '1' })}>Everything</a></div>
-                <div className="seg small"><a className={!cpdAll ? 'on' : ''} href={href({ cpd: null })}>This month</a><a className={cpdAll ? 'on' : ''} href={href({ cpd: 'all' })}>All time</a></div></div></div>
+                <div className="seg small"><a className={!cpdAll ? 'on' : ''} href={href({ cpd: null })}>{custom ? 'This period' : 'This month'}</a><a className={cpdAll ? 'on' : ''} href={href({ cpd: 'all' })}>All time</a></div></div></div>
             {cpd.length ? cpd.map((x, i) => (
               <div key={x.code} className="st-cpd">
                 <span>{flag(x.code)} {countryName(x.code)}</span>
@@ -335,8 +380,8 @@ export default async function Statements({ searchParams }) {
               </div>
             )) : <p className="muted" style={{ margin: 0 }}>Log where you were (step 2) to see this.</p>}
             <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>
-              {!cpdAll && covered < monthDays && cpd.length ? `${monthDays - covered} day${monthDays - covered === 1 ? '' : 's'} of ${monthLabel(month)} not logged. ` : ''}
-              {cpdFull ? 'Everything you spent' : 'Day-to-day spending only: rent, bills, subscriptions, business costs and transfers to people are left out, since you pay those wherever you are'}. Travel bookings are always left out{!cpdAll && travelThisMonth > 0 ? ` (${eur(travelThisMonth)} this month)` : ''}.{cpdAll ? ' All time covers the last 24 months.' : ''}
+              {!cpdAll && covered < monthDays && cpd.length ? `${monthDays - covered} day${monthDays - covered === 1 ? '' : 's'} of ${pShort} not logged. ` : ''}
+              {cpdFull ? 'Everything you spent' : 'Day-to-day spending only: rent, bills, subscriptions, business costs and transfers to people are left out, since you pay those wherever you are'}. Travel bookings are always left out{!cpdAll && travelThisMonth > 0 ? ` (${eur(travelThisMonth)} in this period)` : ''}.{cpdAll ? ' All time covers the last 24 months.' : ''}
             </p>
           </section>
         </div>
@@ -349,7 +394,7 @@ export default async function Statements({ searchParams }) {
             <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>Dashed line = your average ({eur(avg)}).{!quarters ? ' Faint bars show the same month last year once you have it.' : ''} Hover a bar for the amount.</p>
           </section>
           <section className="card">
-            <div className="card-head"><h2>Top shops</h2><span className="muted" style={{ fontSize: 13 }}>{monthLabel(month)}</span></div>
+            <div className="card-head"><h2>Top shops</h2><span className="muted" style={{ fontSize: 13 }}>{pShort}</span></div>
             <div className="list">{shops.map((s) => (
               <div key={s.m} className="st-line" style={{ justifyContent: 'space-between' }}>
                 <span>{s.name} <span className="tag">{s.cat}</span>{s.n > 1 ? <span className="muted" style={{ fontSize: 12 }}> · {s.n}×</span> : null}</span><strong>{eur(s.total)}</strong>
@@ -359,7 +404,7 @@ export default async function Statements({ searchParams }) {
 
         <section className="card">
           <details className="fold">
-            <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>All transactions · {monthLabel(month)}</span><span className="muted" style={{ fontSize: 13 }}>{mRows.length} · change any label here</span></summary>
+            <summary><span className="fold-chev" aria-hidden="true">▸</span><span style={{ flex: 1, fontWeight: 600 }}>All transactions · {pShort}</span><span className="muted" style={{ fontSize: 13 }}>{mRows.length} · change any label here</span></summary>
             <div className="fold-body fold-list">
               {Object.entries(KIND_LABEL).map(([kind, kl]) => {
                 const list = mRows.filter((r) => r.kind === kind);
