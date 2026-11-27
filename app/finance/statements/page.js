@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase';
 import { eur, monthStart, shiftMonth, monthLabel, todayIso, lastDayOfMonth } from '@/lib/util';
-import { SPEND_CATEGORIES, BUDGET_OF, KIND_LABEL, countries, flag, countryName } from '@/lib/statements';
+import { SPEND_CATEGORIES, FIXED_COSTS, BUDGET_OF, KIND_LABEL, countries, flag, countryName } from '@/lib/statements';
 import InfoButton from '../../components/InfoButton';
 import Upload from './Upload';
 import LabelSelect from './LabelSelect';
@@ -42,8 +42,8 @@ export default async function Statements({ searchParams }) {
   const month = sp?.m ? monthStart(sp.m) : monthStart(latest?.[0]?.date?.slice(0, 7));
   const ym = month.slice(0, 7); const mEnd = lastDayOfMonth(month);
   const from = shiftMonth(month, -23);
-  const quarters = sp?.q === '1'; const cpdAll = sp?.cpd === 'all';
-  const href = (extra) => { const p = { m: ym, ...(quarters ? { q: '1' } : {}), ...(cpdAll ? { cpd: 'all' } : {}), ...extra }; return `/finance/statements?${Object.entries(p).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join('&')}`; };
+  const quarters = sp?.q === '1'; const cpdAll = sp?.cpd === 'all'; const cpdFull = sp?.fixed === '1';
+  const href = (extra) => { const p = { m: ym, ...(quarters ? { q: '1' } : {}), ...(cpdAll ? { cpd: 'all' } : {}), ...(cpdFull ? { fixed: '1' } : {}), ...extra }; return `/finance/statements?${Object.entries(p).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join('&')}`; };
 
   const [rows, { data: expenses }, { data: stays }, { data: uploads }, { data: labels }, reviewAll] = await Promise.all([
     fetchAll(() => supabase.from('bank_txns').select('id,date,description,merchant,amount,currency,eur,kind,category,needs_review,bank').gte('date', from).lte('date', mEnd).order('date')),
@@ -111,7 +111,7 @@ export default async function Statements({ searchParams }) {
   stayList.forEach((s) => {
     const a = s.start_date > cpdRange[0] ? s.start_date : cpdRange[0]; const b = s.end_date < cpdRange[1] ? s.end_date : cpdRange[1];
     if (a > b) return;
-    const sp2 = spendOf(rows.filter((r) => r.date >= a && r.date <= b && r.category !== 'Travel'));
+    const sp2 = spendOf(rows.filter((r) => r.date >= a && r.date <= b && r.category !== 'Travel' && (cpdFull || !FIXED_COSTS.includes(r.category))));
     const n = days(a, b); covered += n;
     const cur = perCountry.get(s.country) || { days: 0, spend: 0 }; perCountry.set(s.country, { days: cur.days + n, spend: cur.spend + sp2 });
   });
@@ -171,7 +171,7 @@ export default async function Statements({ searchParams }) {
                 <li><strong>Moved between my accounts</strong>: Wio ↔ Revolut transfers, top-ups and currency exchanges. Never counted as spending.</li>
                 <li><strong>My businesses</strong>: money to or from T Ventures, Promenado FZCO and Promenado LLC. Neither spending nor income; shown in its own section.</li>
                 <li>All amounts are converted to EUR at the ECB rate of that month.</li>
-                <li><strong>Cost per day</strong> uses your stays log and leaves out Travel (flights and hotels), which you usually pay before the trip.</li>
+                <li><strong>Cost per day</strong> uses your stays log. By default it shows day-to-day spending only (no rent, bills, subscriptions, business costs or transfers to people); switch to Everything to include them. Travel bookings are always left out, since you pay them before the trip.</li>
               </ul>
               <p className="muted" style={{ fontSize: 13 }}>Labels come from your own choices first, then a built-in list of shops and the bank's own category. No AI is used, so uploading costs nothing.</p>
             </InfoButton>
@@ -324,7 +324,9 @@ export default async function Statements({ searchParams }) {
           </section>
           <section className="card">
             <div className="card-head"><h2>Cost per day by country</h2>
-              <div className="seg small"><a className={!cpdAll ? 'on' : ''} href={href({ cpd: null })}>This month</a><a className={cpdAll ? 'on' : ''} href={href({ cpd: 'all' })}>All time</a></div></div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <div className="seg small"><a className={!cpdFull ? 'on' : ''} href={href({ fixed: null })}>Day-to-day</a><a className={cpdFull ? 'on' : ''} href={href({ fixed: '1' })}>Everything</a></div>
+                <div className="seg small"><a className={!cpdAll ? 'on' : ''} href={href({ cpd: null })}>This month</a><a className={cpdAll ? 'on' : ''} href={href({ cpd: 'all' })}>All time</a></div></div></div>
             {cpd.length ? cpd.map((x, i) => (
               <div key={x.code} className="st-cpd">
                 <span>{flag(x.code)} {countryName(x.code)}</span>
@@ -334,7 +336,7 @@ export default async function Statements({ searchParams }) {
             )) : <p className="muted" style={{ margin: 0 }}>Log where you were (step 2) to see this.</p>}
             <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>
               {!cpdAll && covered < monthDays && cpd.length ? `${monthDays - covered} day${monthDays - covered === 1 ? '' : 's'} of ${monthLabel(month)} not logged. ` : ''}
-              Travel bookings are left out{!cpdAll && travelThisMonth > 0 ? ` (${eur(travelThisMonth)} this month)` : ''}.{cpdAll ? ' All time covers the last 24 months.' : ''}
+              {cpdFull ? 'Everything you spent' : 'Day-to-day spending only: rent, bills, subscriptions, business costs and transfers to people are left out, since you pay those wherever you are'}. Travel bookings are always left out{!cpdAll && travelThisMonth > 0 ? ` (${eur(travelThisMonth)} this month)` : ''}.{cpdAll ? ' All time covers the last 24 months.' : ''}
             </p>
           </section>
         </div>
